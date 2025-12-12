@@ -12,7 +12,9 @@ dependencies = [
     "spikeinterface[full] (>=0.103.2,<0.104.0)",
     "jupyter (>=1.1.1,<2.0.0)",
     "pynapple (==0.7.1)",
-    "spikeinterface-gui (>=0.12.0,<0.13.0)"
+    "spikeinterface-gui (>=0.12.0,<0.13.0)",
+    "pyqt5 (>=5.15.11,<6.0.0)",
+    "pyqtgraph (>=0.14.0,<0.15.0)"
 ]
 
 [build-system]
