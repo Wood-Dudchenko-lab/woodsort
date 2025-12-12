@@ -1466,6 +1466,56 @@ files = [
 arrow = ">=0.15.0"
 
 [[package]]
+name = "isosplit6"
+version = "0.1.4"
+description = "None"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "isosplit6-0.1.4-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:54ae3ea8e05d4ce4d33e3edb7391ca4f82b2e8df863cfa67a81637d284b93d1f"},
+    {file = "isosplit6-0.1.4-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e140d121066effb89d4f0e7288c721b540feeb91f044e4e0b20b365b7b0ea661"},
+    {file = "isosplit6-0.1.4-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:282ea82cb3afde60a75161a2767dcc375153141d49ba352ab7ef0d704e2ef32d"},
+    {file = "isosplit6-0.1.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4f4eb20ed8ca8ba7ab856a41250abfdd3d02c7303688c5a86a19aa27d3e91f4e"},
+    {file = "isosplit6-0.1.4-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:07af8e8de27cf5caabcf187d2191b90a1ad6ee52d22ef7b49d81718caf5a6cbf"},
+    {file = "isosplit6-0.1.4-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:e7d434cd77a0b4a38d7b31e550ccaefa0b456982b25205d4dcd25516946cbb13"},
+    {file = "isosplit6-0.1.4-cp310-cp310-win32.whl", hash = "sha256:7f60b73dc45892a55598e84551d2a8d1ff761e2012423b58fe0d363ad01c6113"},
+    {file = "isosplit6-0.1.4-cp310-cp310-win_amd64.whl", hash = "sha256:e80e0d6a511617f572ac001597a4dda55739e7832a1b7fe616a72ffb366315ce"},
+    {file = "isosplit6-0.1.4-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:1799ce8af0e901a42243dc38e476add55769c05234ff53c813e3345c76675786"},
+    {file = "isosplit6-0.1.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:b7b09e2c80738d07ed686217c2734c3dd537f2c80faaa310b818318a355c1b15"},
+    {file = "isosplit6-0.1.4-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:b74f4705b7f2ae5c090be435aea256bd36569651eb41289d29e2133475942e95"},
+    {file = "isosplit6-0.1.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c42b80d679520060bb2655ad701b4959435f45cb1e460a8a3e88f09520c3079e"},
+    {file = "isosplit6-0.1.4-cp311-cp311-musllinux_1_1_i686.whl", hash = "sha256:2f23c5006fe77be65703ae9f88ddbf14d3434bb9ad67449217bf94243ea2612f"},
+    {file = "isosplit6-0.1.4-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:1151196b5a4457f4c081f37ce967b8fa80d28d36017df1ab38f2c9c3d195bd09"},
+    {file = "isosplit6-0.1.4-cp311-cp311-win32.whl", hash = "sha256:80709a4a90f7cca563198a1568c89507dd35401abfadc5bb48a53248d44297b7"},
+    {file = "isosplit6-0.1.4-cp311-cp311-win_amd64.whl", hash = "sha256:87ae9eca2a738e41feff98509e88341c3b339559cb9457dcb8927c0ca8710f89"},
+    {file = "isosplit6-0.1.4-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:b7861398b734c73ce02def15f62757e7e4cebd2002d5489f2123f533a4e4d7f6"},
+    {file = "isosplit6-0.1.4-cp37-cp37m-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:64b7483ff1c2f02ccd0d7e8531fa7502ccf120441c4ac18ac14d934879cde06e"},
+    {file = "isosplit6-0.1.4-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ef5ef5abec1a5c02bef2452b7ec68bcb6bd7901d0e0edbbceb09f74479cd1180"},
+    {file = "isosplit6-0.1.4-cp37-cp37m-musllinux_1_1_i686.whl", hash = "sha256:5f1638d52490427df5ec72c1464f2b98cd18c8a7dd165eee14f6a844dbb7a2df"},
+    {file = "isosplit6-0.1.4-cp37-cp37m-musllinux_1_1_x86_64.whl", hash = "sha256:2337434b4a42fa632457bdd445281189b8fb5a073e2cabaad5b3c020e495a9b4"},
+    {file = "isosplit6-0.1.4-cp37-cp37m-win32.whl", hash = "sha256:8dbd8e07575891fc979de64f3e7fd8e62b29ad4d3d676a943aa3c7b11515bbe1"},
+    {file = "isosplit6-0.1.4-cp37-cp37m-win_amd64.whl", hash = "sha256:c0aa7ba8aa272e1a4b5e98ae4e7fbd232dca0242f40015f497937d5d3636a1ac"},
+    {file = "isosplit6-0.1.4-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:8579c5165c047724c1a07fb78d8203ab6d9fcdb5bdb1f0e02fce48ea17a9df63"},
+    {file = "isosplit6-0.1.4-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:1c009812663c05c740121738dd7740db06586b24d3a28b604100b2c0ae8fff01"},
+    {file = "isosplit6-0.1.4-cp38-cp38-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:80f1059705d38d7d93ce15cf027049f9df40ec0d740388f9187a8fe4fb315ce4"},
+    {file = "isosplit6-0.1.4-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f2defe101bc09eb73d5011f34733920c04a501d5231ac8f5568e02aa71b177a4"},
+    {file = "isosplit6-0.1.4-cp38-cp38-musllinux_1_1_i686.whl", hash = "sha256:36d6ded4685fcfe1ddcb7ecc76fec61089d4f221e32f5a1ef57417c18f5cf6c4"},
+    {file = "isosplit6-0.1.4-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:55cba83f90271bb189b8d0d8a79bed69eb53e2cb66bcd7ad0a1b1879be279651"},
+    {file = "isosplit6-0.1.4-cp38-cp38-win32.whl", hash = "sha256:5b1babd31f71f947a5c66714aa02af3a168cfdab5750cd56f253a186727e5deb"},
+    {file = "isosplit6-0.1.4-cp38-cp38-win_amd64.whl", hash = "sha256:99809d8844c96f0025661322769863bbd1a5cc762cc9e70e366f4360ec6c6423"},
+    {file = "isosplit6-0.1.4-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:00c862372782357b141e7ca8505cb1bfac8c3b01da2eb05d51c4bd5e1c5f9ac3"},
+    {file = "isosplit6-0.1.4-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:96a7bdf86e99aedb0d1f4e257375d230159c4c34c60b6c117a3c7f7f025f4cdf"},
+    {file = "isosplit6-0.1.4-cp39-cp39-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5b195d6057a3f7e4da5e0e9c84230d24f7a2eaff7018c1d880b8cd87cc1f46c1"},
+    {file = "isosplit6-0.1.4-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ddbbd2efdabd86d59159a59bba578d337ecf75dfc57c703a3b9b037edc9cfaae"},
+    {file = "isosplit6-0.1.4-cp39-cp39-musllinux_1_1_i686.whl", hash = "sha256:f3f4c9bd55ebec2f8fb84bbea2efe8e51732ec2cf4277b8ad698ce3398ef85ff"},
+    {file = "isosplit6-0.1.4-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:372bd4d8206628285b5475e2c793ab9d4e22cb4abd02998a7a7dc8d5afea8ea4"},
+    {file = "isosplit6-0.1.4-cp39-cp39-win32.whl", hash = "sha256:8b6c32b960965447e01a5dd21f280fdc5679c21f97698a9c17c1515e89de9fda"},
+    {file = "isosplit6-0.1.4-cp39-cp39-win_amd64.whl", hash = "sha256:f6bee9e3c8607352f18effd143c347340a380d6b020692f47418f25a4a882366"},
+    {file = "isosplit6-0.1.4.tar.gz", hash = "sha256:a5d60ef34687a5418151105c288253f4be15086c63f17d3e8d61f8e6d1ae34c8"},
+]
+
+[[package]]
 name = "jedi"
 version = "0.19.2"
 description = "An autocompletion tool for Python that can be used for text editors."
@@ -2282,6 +2332,24 @@ files = [
 
 [package.dependencies]
 typing-extensions = {version = "*", markers = "python_version < \"3.11\""}
+
+[[package]]
+name = "mountainsort5"
+version = "0.5.8"
+description = "MountainSort 5 spike sorting algorithm"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "mountainsort5-0.5.8-py3-none-any.whl", hash = "sha256:38a2ff7c6f39a6cf8e5b3eb278ff36ea777860d24230d9f0474edd1554eba868"},
+    {file = "mountainsort5-0.5.8.tar.gz", hash = "sha256:499b35d3c8f5ee152ab25cc1de9bb70bb25fa44ac7b66058a4864f0cc93bca16"},
+]
+
+[package.dependencies]
+isosplit6 = ">=0.1.0"
+packaging = "*"
+scikit-learn = "*"
+spikeinterface = ">=0.97.1"
 
 [[package]]
 name = "nbclient"
@@ -5087,4 +5155,4 @@ jupyter = ["ipytree (>=0.2.2)", "ipywidgets (>=8.0.0)", "notebook"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "ba25a45329c2817e1be4a03565ab45ba2bbc423f981b009e011ea6594bc78dc1"
+content-hash = "f51e2f97f9b9db4957dd69ba6077debbe7f03244a8ef4f530497a5df6d0a5fb1"

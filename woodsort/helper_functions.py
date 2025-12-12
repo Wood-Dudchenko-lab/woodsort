@@ -2,50 +2,221 @@
 from __future__ import annotations
 import matplotlib.pyplot as plt
 import pynapple as nap
-import xml.etree.ElementTree as ET
-from pathlib import Path
-import numpy as np
 import json
 import pandas as pd
 from dateutil import parser
 from warnings import warn
 from spikeinterface.core import SortingAnalyzer, BaseSorting
+import re
+import numpy as np
+import xml.etree.ElementTree as ET
+from pathlib import Path
+import os
+from scipy.signal import firwin, lfilter, resample_poly
+from tqdm import tqdm
 
+def get_lfp_from_dat(basepath, outFs=1250, lopass=450, noPrompts=True):
+    # Determine basename
+    basename = os.path.basename(os.path.normpath(basepath))
+    dat_file = os.path.join(basepath, f"{basename}.dat")
+    lfp_file = os.path.join(basepath, f"{basename}.lfp")
+    xml_file = os.path.join(basepath, f"{basename}.xml")
 
-def get_epochs(recording):
+    # If dat file doesn't exist, try amplifier.dat
+    if not os.path.exists(dat_file):
+        dat_file = os.path.join(basepath, "amplifier.dat")
+        if not os.path.exists(dat_file):
+            raise FileNotFoundError("Dat file does not exist")
+
+    # Read metadata from XML if available
+    inFs = 30000  # default sampling frequency
+    nbChan = 16   # default number of channels
+    if os.path.exists(xml_file):
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+        inFs = float(root.findtext('SampleRate', default=inFs))
+        nbChan = int(root.findtext('nChannels', default=nbChan))
+        outFs = float(root.findtext('lfpSampleRate', default=outFs))
+
+    # Calculate filter and downsample parameters
+    if lopass > outFs / 2:
+        raise ValueError("Low-pass frequency exceeds Nyquist limit")
+    downsample_ratio = int(inFs / outFs)
+    nyquist = inFs / 2
+    norm_cutoff = lopass / nyquist
+
+    # FIR filter (sinc)
+    ntbuff = 525  # filter length
+    fir_coeff = firwin(ntbuff, norm_cutoff)
+
+    # Check file size
+    size_in_bytes = 2  # int16
+    file_size = os.path.getsize(dat_file)
+    chunk_size = int(1e5)
+    if chunk_size % downsample_ratio != 0:
+        chunk_size += downsample_ratio - (chunk_size % downsample_ratio)
+    nbChunks = file_size // (nbChan * size_in_bytes * chunk_size)
+
+    # Open files
+    with open(dat_file, 'rb') as fdat, open(lfp_file, 'wb') as flfp:
+        for ibatch in tqdm(range(nbChunks), desc="Processing LFP"):
+            if ibatch > 0:
+                # Move back ntbuff samples for filter overlap
+                fdat.seek((ibatch * chunk_size - ntbuff) * nbChan * size_in_bytes)
+                dat = np.fromfile(fdat, dtype=np.int16, count=nbChan*(chunk_size+2*ntbuff))
+                dat = dat.reshape(nbChan, chunk_size + 2*ntbuff)
+            else:
+                dat = np.fromfile(fdat, dtype=np.int16, count=nbChan*(chunk_size + ntbuff))
+                dat = dat.reshape(nbChan, chunk_size + ntbuff)
+
+            lfp_data = np.zeros((nbChan, chunk_size // downsample_ratio), dtype=np.int16)
+            for ch in range(nbChan):
+                filtered = lfilter(fir_coeff, 1.0, dat[ch, :])
+                # Downsample
+                lfp_data[ch, :] = filtered[ntbuff::downsample_ratio][:chunk_size // downsample_ratio].astype(np.int16)
+
+            flfp.write(lfp_data.T.tobytes())
+
+        # Handle remainder
+        remainder = file_size // (size_in_bytes * nbChan) - nbChunks*chunk_size
+        if remainder > 0:
+            fdat.seek((nbChunks*chunk_size - ntbuff) * nbChan * size_in_bytes)
+            dat = np.fromfile(fdat, dtype=np.int16, count=nbChan*(remainder + ntbuff))
+            dat = dat.reshape(nbChan, remainder + ntbuff)
+            lfp_data = np.zeros((nbChan, remainder // downsample_ratio), dtype=np.int16)
+            for ch in range(nbChan):
+                filtered = lfilter(fir_coeff, 1.0, dat[ch, :])
+                lfp_data[ch, :] = filtered[ntbuff::downsample_ratio][:remainder // downsample_ratio].astype(np.int16)
+            flfp.write(lfp_data.T.tobytes())
+
+    print(f"{basename}.lfp file created!")
+
+# Example usage:
+# process_lfp_from_dat("/path/to/basepath", outFs=1250, lopass=450)
+
+def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimestamps.csv'):
     """
-    Returns a DataFrame with the start and end times (in seconds) of each epoch in the recording.
+    Extracts epoch start/end timestamps (in seconds) from OpenEphys recordings.
+    Each 'recording*' folder must contain exactly one 'sample_numbers.npy' file.
 
     Parameters
     ----------
-    recording : spikeinterface.Recording
-        The recording object to extract epochs from.
+    recfolder_path : str or Path
+        Path to the session folder containing 'Record Node*/recording*' folders.
+
+    save_path : str or Path, optional
+        Directory to save the epoch CSV. Created if it does not exist.
+
+    save_name : str, optional
+        Output CSV filename (default: 'EpochTimestamps.csv').
 
     Returns
     -------
     epoch_df : pd.DataFrame
-        A DataFrame with columns 'start' and 'end' representing the epoch start and end times (in seconds).
+        Columns:
+            'start' : epoch start time in seconds
+            'end'   : epoch end time in seconds
     """
+    print('\nExtracting epoch timestamps...')
+    recfolder_path = Path(recfolder_path)
 
-    # Get epoch start and end times in samples
-    epoch_starts = [0]
-    epoch_ends = [recording.get_num_samples(0)]
+    # ------------------------------------------------------------
+    # Locate the Record Node folder
+    # ------------------------------------------------------------
+    node_path = next(
+        (p for p in recfolder_path.rglob("Record Node*") if p.is_dir()),
+        None
+    )
+    if node_path is None:
+        raise FileNotFoundError("No 'Record Node*' folder found under this path.")
 
-    for epoch in range(recording.get_num_segments() - 1):
-        epoch_starts.append(recording.get_num_samples(epoch) + epoch_starts[-1])
-        epoch_ends.append(recording.get_num_samples(epoch + 1) + epoch_ends[-1] - 1)
+    # Collect recording folders
+    recording_folders = [p for p in node_path.rglob("recording*") if p.is_dir()]
+    recording_folders.sort(key=lambda p: (len(p.parts), p.name))
 
-    # Convert from samples to seconds
-    epoch_starts = np.array(epoch_starts) / recording.get_sampling_frequency()
-    epoch_ends = np.array(epoch_ends) / recording.get_sampling_frequency()
+    if len(recording_folders) == 0:
+        raise FileNotFoundError("No 'recording*' folders found under the Record Node.")
 
-    # Create a DataFrame
-    epochs = pd.DataFrame({
-        'start': epoch_starts,
-        'end': epoch_ends
-    })
+    # ------------------------------------------------------------
+    # Loop through recordings and extract epoch times
+    # ------------------------------------------------------------
+    epochs_all = []
+    samples_so_far = 0
 
-    return epochs
+    for rec_folder in recording_folders:
+
+        print(f"\nExtracting start and end times: {rec_folder}")
+
+        # Load sample rate from structure.oebin
+        oebin_path = rec_folder / "structure.oebin"
+        if not oebin_path.exists():
+            raise FileNotFoundError(f"Missing: {oebin_path}")
+
+        with open(oebin_path, "r") as f:
+            oebin = json.load(f)
+
+        sample_rate = oebin["continuous"][0]["sample_rate"]
+
+        # --------------------------------------------------------
+        # Locate sample_numbers.npy
+        # --------------------------------------------------------
+        continuous_folder = rec_folder / "continuous"
+        sample_files = list(continuous_folder.rglob("sample_numbers.npy"))
+
+        if len(sample_files) == 0:
+            raise FileNotFoundError(f"No sample_numbers.npy found under: {rec_folder}")
+
+        if len(sample_files) > 1:
+            raise RuntimeError(
+                f"Multiple sample_numbers.npy files found under {rec_folder}. "
+                "There must be exactly one."
+            )
+
+        sample_file = sample_files[0]
+
+        # Read the sample numbers
+        sample_numbers = np.load(sample_file)
+
+        if sample_numbers.ndim != 1 or sample_numbers.size < 2:
+            raise ValueError(f"sample_numbers.npy in {rec_folder} is malformed.")
+
+        # --------------------------------------------------------
+        # Convert start/end to *global* sample numbers
+        # --------------------------------------------------------
+        start_sample = sample_numbers[0] + samples_so_far
+        end_sample = sample_numbers[-1] + samples_so_far
+
+        # Store epoch (in seconds)
+        epochs_all.append([
+            start_sample / sample_rate,
+            end_sample / sample_rate
+        ])
+
+        # Update running offset for next recording
+        samples_so_far += (end_sample - start_sample)
+
+    # ------------------------------------------------------------
+    # Build DataFrame
+    # ------------------------------------------------------------
+    epoch_df = pd.DataFrame(epochs_all, columns=["start", "end"])
+
+    # ------------------------------------------------------------
+    # Save if requested
+    # ------------------------------------------------------------
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
+    else:
+        save_path = recfolder_path
+
+    if not str(save_name).lower().endswith(".csv"):
+        save_name += ".csv"
+
+    outfile = save_path / save_name
+    epoch_df.to_csv(outfile, index=False)
+    print(f"\nEpoch timestamps saved to: {outfile}\n")
+
+    return epoch_df
 
 def add_neuroscope_mapping(probe, xml_channel_indices):
     # Sanity check for number of channels
@@ -85,88 +256,94 @@ def add_neuroscope_mapping(probe, xml_channel_indices):
     return probe
 
 
-
-def read_xml(file_path):
+def load_neuroscope_channels(recfolder_path, shank_groups=None):
     """
-    Parses an XML file and extracts relevant information into a dictionary.
+    Locate the session's continuous.xml file, extract anatomical channel groups,
+    and return a 1D array of channel indices for the specified shank groups.
+
+    Parameters
+    ----------
+    recfolder_path : str or Path
+        Path to the session folder containing recording* subfolders.
+    shank_groups : list, array, or None
+        Indices of anatomical groups to extract.
+        Must be specified; if None, an error is raised.
+
+    Returns
+    -------
+    xml_channel_indices : np.ndarray
+        Flattened array of channel indices belonging to the selected shanks.
     """
-    print('Importing metadata from the .xml file...')
 
-    # account for file name variations
-    try:
-        tree = ET.parse(file_path)
-    except FileNotFoundError:
-        # Only modify the name part, not the whole path
-        parent = file_path.parent
-        name = file_path.name
-        if '-' in name:
-            alternative_name = name.replace('-', '_')
-        else:
-            alternative_name = name.replace('_', '-')
-
-        alternative_path = parent / alternative_name
-        tree = ET.parse(alternative_path)
-
-    myroot = tree.getroot()
-
-    data = {
-        "nbits": int(myroot.find("acquisitionSystem").find("nBits").text),
-        "dat_sampling_rate": None,
-        "n_channels": None,
-        "voltage_range": None,
-        "amplification": None,
-        "offset": None,
-        "eeg_sampling_rate": None,
-        "anatomical_groups": [],
-        "skipped_channels": [],
-        "discarded_channels": [],
-        "spike_detection": [],
-        "units": [],
-        "spike_groups": []
-    }
-
-    for sf in myroot.findall("acquisitionSystem"):
-        data["dat_sampling_rate"] = int(sf.find("samplingRate").text)
-        data["n_channels"] = int(sf.find("nChannels").text)
-        data["voltage_range"] = float(sf.find("voltageRange").text)
-        data["amplification"] = float(sf.find("amplification").text)
-        data["offset"] = float(sf.find("offset").text)
-
-    for val in myroot.findall("fieldPotentials"):
-        data["eeg_sampling_rate"] = int(val.find("lfpSamplingRate").text)
-
-    anatomical_groups, skipped_channels = [], []
-    for x in myroot.findall("anatomicalDescription"):
-        for y in x.findall("channelGroups"):
-            for z in y.findall("group"):
-                chan_group = []
-                for chan in z.findall("channel"):
-                    if int(chan.attrib.get("skip", 0)) == 1:
-                        skipped_channels.append(int(chan.text))
-                    chan_group.append(int(chan.text))
-                if chan_group:
-                    anatomical_groups.append(np.array(chan_group))
-
-    if data["n_channels"] is not None:
-        data["discarded_channels"] = np.setdiff1d(
-            np.arange(data["n_channels"]), np.concatenate(anatomical_groups) if anatomical_groups else []
+    if shank_groups is None:
+        raise ValueError(
+            "shank_groups must be specified (e.g. [0], [0,1], etc.) "
+            "because this function only returns channel indices."
         )
 
-    data["anatomical_groups"] = np.array(anatomical_groups, dtype="object")
-    data["skipped_channels"] = np.array(skipped_channels)
+    recfolder_path = Path(recfolder_path)
 
-    # Parse spike detection groups
-    spike_groups = []
-    for x in myroot.findall("spikeDetection/channelGroups"):
-        for y in x.findall("group"):
-            chan_group = [int(chan.text) for chan in y.find("channels").findall("channel")]
-            if chan_group:
-                spike_groups.append(np.array(chan_group))
+    # ------------------------------------------------------------
+    # Find XML file
+    # ------------------------------------------------------------
+    xml_candidates = list(recfolder_path.rglob("continuous.xml"))
+    if len(xml_candidates) == 0:
+        raise FileNotFoundError("No continuous.xml found under this recording folder.")
 
-    data["spike_groups"] = spike_groups
-    # data["spike_groups"] = np.array(spike_groups, dtype="object")
+    # Select the XML with smallest recording number
+    xml_path = sorted(
+        xml_candidates,
+        key=lambda x: int(re.search(r"recording(\\d+)", str(x)).group(1))
+    )[0]
 
-    return data
+    print(f"Using XML file: {xml_path}")
+
+    # ------------------------------------------------------------
+    # Parse XML (fallback name swap for hyphen/underscore)
+    # ------------------------------------------------------------
+    try:
+        tree = ET.parse(xml_path)
+    except FileNotFoundError:
+        alt_name = (xml_path.name.replace("-", "_")
+                    if "-" in xml_path.name
+                    else xml_path.name.replace("_", "-"))
+        alt_path = xml_path.parent / alt_name
+        print(f"Trying alternative XML filename: {alt_path}")
+        tree = ET.parse(alt_path)
+
+    root = tree.getroot()
+
+    # ------------------------------------------------------------
+    # Extract anatomical channel groups ONLY
+    # ------------------------------------------------------------
+    anatomical_groups = []
+
+    for desc in root.findall("anatomicalDescription"):
+        for cg in desc.findall("channelGroups"):
+            for group in cg.findall("group"):
+                channels = [int(ch.text) for ch in group.findall("channel")]
+                if channels:
+                    anatomical_groups.append(np.array(channels))
+
+    if len(anatomical_groups) == 0:
+        raise ValueError("No anatomical channel groups found in XML.")
+
+    anatomical_groups = np.array(anatomical_groups, dtype=object)
+
+    # ------------------------------------------------------------
+    # Select shanks
+    # ------------------------------------------------------------
+    try:
+        xml_channel_indices = np.concatenate(anatomical_groups[shank_groups])
+    except IndexError:
+        raise IndexError(
+            f"shank_groups {shank_groups} exceed available groups "
+            f"(found {len(anatomical_groups)})"
+        )
+
+    return xml_channel_indices
+
+
 def get_ttl_from_analog(rec_path, channel: int):
 
     """
@@ -249,34 +426,64 @@ def get_ttl_from_analog(rec_path, channel: int):
     return rising_edges, falling_edges, total_samples
 
 
-def align_tracking(
+def align_tracking_bonsai(
         recfolder_path,
         ttl_channel:int,
         column_names,
-        use_bonsai_timestamps=False
+        use_bonsai_timestamps=False,
+        save_path=None,
+        save_name='TrackingAligned.csv'
 ):
     """
-    Align Bonsai tracking data with OpenEphys global clock using TTL pulses.
+    Align Bonsai tracking data with the OpenEphys global clock using TTL pulses.
+
+    This function loads tracking data from each recording subfolder, aligns
+    each frame to corresponding TTL timestamps, trims mismatches, and outputs
+    a continuous tracking dataframe indexed by global time.
 
     Parameters
     ----------
-    recfolder_path : Path
-        Path to session folder containing recording* subfolders.
+    recfolder_path : Path or str
+        Path to the session folder containing one or more 'recording*' subfolders.
+
     ttl_channel : int
-        TTL channel used for frame sync.
-    column_names : list
-        Names to assign to the Bonsai tracking columns. You must provide the following:
-        'x_left','y_left','x_right','y_right'
-    use_bonsai_timestamps : bool
-        If True → use Bonsai timestamps shifted to recording start.
-        If False → use DAT-derived TTL timestamps (recommended).
+        TTL channel used for frame synchronization between Bonsai and OpenEphys.
+
+    column_names : list of str
+        Names to assign to the Bonsai tracking columns.
+        Must include (in order):
+            'x_left', 'y_left', 'x_right', 'y_right'
+
+    use_bonsai_timestamps : bool, default False
+        If True:
+            Use Bonsai timestamps shifted so that the first frame aligns with
+            the first TTL pulse.
+        If False (recommended):
+            Use OpenEphys-derived TTL timestamps for each video frame.
+
+    save_path : str or Path or None, default None
+        Optional directory where the aligned tracking CSV will be saved.
+        - If None → no file is saved.
+        - If the directory does not exist, it is created automatically.
+        - Must be a valid directory path (not a file).
+
+    save_name : str, default 'TrackingAligned.csv'
+        Filename for saving the aligned tracking table.
+        - If it does not end with '.csv', the extension is appended automatically.
 
     Returns
     -------
-    nap.TsdFrame
-        Tracking data aligned to DAT global clock.
+    pandas.DataFrame
+        A dataframe indexed by global timestamps (seconds), containing the
+        aligned tracking coordinates. Columns include:
+
+            ['x_left', 'y_left', 'x_right', 'y_right']
+
+        The returned dataframe spans all recording subfolders concatenated
+        in temporal order.
     """
 
+    print("\nAligning Bonsai tracking data...")
     # ============================================================
     # Locate recording folders
     # ============================================================
@@ -374,58 +581,76 @@ def align_tracking(
     aligned_tracking = pd.concat(aligned_tracking, ignore_index=True)
     aligned_tracking.set_index('timestamps', inplace=True)
 
-    # ============================================================
-    # Convert to Pynapple TsdFrame
-    # ============================================================
-    tracking_tsd = nap.TsdFrame(
-        t=aligned_tracking,
-        time_units="s"
-    )
+    if save_path is not None:
 
-    print("\nTracking aligned.")
-    return tracking_tsd
+        save_path = Path(save_path)
 
-def process_led_tracking(
+        # Create the directory if it doesn't exist
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        # Ensure .csv extension
+        if not str(save_name).lower().endswith(".csv"):
+            save_name = save_name + ".csv"
+
+        # Save file
+        aligned_tracking.to_csv(save_path / save_name, index=True)
+        print(f"Tracking saved to: {save_path / save_name}")
+
+
+    print("\nTracking aligned.\n")
+
+    return aligned_tracking
+
+def process_tracking_bonsai(
     tracking_data,
     pixel_width,
     min_spacing=3,
     max_spacing=8,
-    plot=True
+    plot=True,
+    save_path=None,
+    save_name='TrackingProcessed.csv'
 ):
     """
     Clean dual-LED tracking data and compute:
-        - position (x,y midpoint of LEDs)
+        - position (x, y midpoint of LEDs)
         - head direction (0–2π)
         - velocity (cm/s)
 
-    Automatically handles missing or bad frames:
-        - If LED distance is outside min/max spacing → frame is NaN
+    Automatically removes bad frames where LED spacing is outside
+    [min_spacing, max_spacing].
 
     Parameters
     ----------
-    aligned_tracking : pandas.DataFrame or nap.TsdFrame
+    tracking_data : pandas.DataFrame or nap.TsdFrame
         Must contain columns: ['x_left', 'y_left', 'x_right', 'y_right'].
-        If TsdFrame, index is used as timestamps.
+        If TsdFrame, its index is treated as timestamps.
 
     pixel_width : float
-        cm per pixel (calibration factor)
+        Conversion factor from pixels → cm.
 
     min_spacing, max_spacing : float
-        Allowed LED distance range in cm
+        Allowed LED spacing range in centimeters.
 
     plot : bool
         If True, produce diagnostic plots.
 
+    save_path : str or Path or None
+        Directory where the processed tracking DataFrame will be saved.
+        - If None: tracking is not saved.
+        - If directory does not exist, it is automatically created.
+
+    save_name : str
+        Filename for saving the tracking CSV.
+        - Must end with ".csv"; if not, ".csv" is added automatically.
+
     Returns
     -------
-    dict
-        Dictionary of Pynapple objects:
-        {
-            "pos": TsdFrame,
-            "hd":  Tsd,
-            "vel": Tsd
-        }
+    pandas.DataFrame
+        A DataFrame indexed by time with columns:
+        ['x', 'y', 'hd', 'velocity']
     """
+
+    print("\nProcessing aligned tracking")
 
     # --- Convert TsdFrame to DataFrame if necessary ---
     if isinstance(tracking_data, nap.TsdFrame):
@@ -448,7 +673,7 @@ def process_led_tracking(
 
     # --- Compute position (midpoint) ---
     pos_x = (xl + xr) / 2
-    pos_y = - (yl + yr) / 2 + np.nanmax((yl + yr) / 2)  # flip Y
+    pos_y = -(yl + yr) / 2 + np.nanmax((yl + yr) / 2)  # flip Y
 
     # --- LED spacing ---
     dx = xl - xr
@@ -463,7 +688,7 @@ def process_led_tracking(
     if np.any(~mask):
         n_removed = np.sum(~mask)
         pct_removed = round(n_removed / len(mask) * 100, 1)
-        print(f"{pct_removed}% frames removed due to LED spacing outside [{min_spacing},{max_spacing}] cm")
+        print(f"{pct_removed}% frames removed due to LED spacing outside [{min_spacing}, {max_spacing}] cm")
 
     pos_x[~mask] = np.nan
     pos_y[~mask] = np.nan
@@ -474,18 +699,37 @@ def process_led_tracking(
     vel = np.hypot(np.diff(pos_x), np.diff(pos_y)) / dt
     vel = np.insert(vel, 0, np.nan)
 
-    # --- Pynapple conversion ---
-    tsd_pos = nap.TsdFrame(
-        t=t,
-        d=np.column_stack([pos_x, pos_y]),
-        columns=['x', 'y'],
-        time_units="s"
+    # --- Pandas conversion ---
+    tracking_df = pd.DataFrame(
+        {
+            "x": pos_x,
+            "y": pos_y,
+            "hd": hd,
+            "velocity": vel
+        },
+        index=t
     )
+    tracking_df.index.name = "timestamps"
 
-    tsd_hd = nap.Tsd(t=t, d=hd, time_units="s")
-    tsd_vel = nap.Tsd(t=t, d=vel, time_units="s")
+    # ----------------------------------------------------
+    # SAVE LOGIC — now auto-creates directory
+    # ----------------------------------------------------
+    if save_path is not None:
 
-    print("\nTracking processed.")
+        save_path = Path(save_path)
+
+        # Create the directory if it doesn't exist
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        # Ensure .csv extension
+        if not str(save_name).lower().endswith(".csv"):
+            save_name = save_name + ".csv"
+
+        # Save file
+        tracking_df.to_csv(save_path / save_name, index=True)
+        print(f"Tracking saved to: {save_path / save_name}")
+
+    print("\nTracking processed.\n")
 
     # --- Diagnostic plots ---
     if plot:
@@ -504,7 +748,8 @@ def process_led_tracking(
         plt.ylabel("Y (cm)")
         plt.gca().set_aspect("equal", "box")
 
-    return {"position": tsd_pos, "head-direction": tsd_hd, "velocity": tsd_vel}
+    return tracking_df
+
 
 
 ### Export to Pynapple ###
