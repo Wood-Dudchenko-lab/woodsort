@@ -7,6 +7,8 @@ from pathlib import Path
 import platform
 import subprocess
 import re
+import shutil
+
 
 def make_lfp_from_dat(
     dat_file,
@@ -118,19 +120,19 @@ def make_lfp_from_dat(
             flfp.write(lfp_data.T.tobytes())
 
 
-def merge_lfp_files(session_folder, output_name="LocalFieldPotential.lfp"):
+def merge_lfp_files(session_folder, output_name="continuous.lfp"):
     session_folder = Path(session_folder)
     out_path = session_folder / output_name
 
     # Collect component LFP files ONLY
-    files = list(session_folder.glob("local_field_potential_*.lfp"))
+    files = list(session_folder.glob("continuous_*.lfp"))
     files = [f for f in files if f.resolve() != out_path.resolve()]
     if not files:
-        raise FileNotFoundError(f"No local_field_potential_*.lfp in {session_folder}")
+        raise FileNotFoundError(f"No continuous_*.lfp in {session_folder}")
 
     # Numeric sort by trailing index X
     def idx(p: Path):
-        m = re.search(r"local_field_potential_(\d+)\.lfp$", p.name)
+        m = re.search(r"continuous_(\d+)\.lfp$", p.name)
         return int(m.group(1)) if m else 10**12
 
     files = sorted(files, key=idx)
@@ -155,6 +157,51 @@ def merge_lfp_files(session_folder, output_name="LocalFieldPotential.lfp"):
 
     return
 
+def copy_xml_to_session(recfolder_path):
+    """
+    Find a continuous.xml file somewhere under recfolder_path and copy it
+    to the top-level session folder.
+
+    The XML chosen is the one with the smallest recording number.
+    """
+
+    recfolder_path = Path(recfolder_path)
+
+    # ------------------------------------------------------------
+    # Find XML files
+    # ------------------------------------------------------------
+    xml_candidates = list(recfolder_path.rglob("continuous.xml"))
+    if not xml_candidates:
+        print(f"No XML file found in {recfolder_path}.")
+        return
+
+    # ------------------------------------------------------------
+    # Extract recording indices
+    # ------------------------------------------------------------
+    recording_numbers = []
+    for path in xml_candidates:
+        match = re.search(r"recording(\d+)", str(path))
+        if match:
+            recording_numbers.append(int(match.group(1)))
+        else:
+            recording_numbers.append(float("inf"))
+
+    # ------------------------------------------------------------
+    # Select XML with smallest recording index
+    # ------------------------------------------------------------
+    xml_path = xml_candidates[
+        recording_numbers.index(min(recording_numbers))
+    ]
+
+    dest_path = recfolder_path / "continuous.xml"
+
+    # ------------------------------------------------------------
+    # Copy (overwrite if exists)
+    # ------------------------------------------------------------
+    shutil.copy2(xml_path, dest_path)
+    print(f"Copied XML file.")
+
+    return
 
 def extract_lfp_openephys(
     session_folder,
@@ -211,7 +258,7 @@ def extract_lfp_openephys(
             raise RuntimeError(f"Could not parse metadata from {oebin_path}: {e}")
 
         idx += 1
-        lfp_name = f"local_field_potential_{idx}"
+        lfp_name = f"continuous_{idx:02d}"
         out_lfp = session_folder / f"{lfp_name}.lfp"
 
         print(f"\n[{idx}] recording folder: {rec}")
@@ -230,6 +277,8 @@ def extract_lfp_openephys(
 
     # merge and delete LFP files
     merge_lfp_files(session_folder)
+    # copy XML file if present
+    copy_xml_to_session(session_folder)
 
     print(f"LFP extraction done.\n")
 

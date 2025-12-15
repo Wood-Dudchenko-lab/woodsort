@@ -1,7 +1,80 @@
+
+#from __future__ import annotations
 import re
 import numpy as np
-import xml.etree.ElementTree as ET
 from pathlib import Path
+import xml.etree.ElementTree as ET
+import pandas as pd
+
+
+def load_neuroscope_channels(recfolder_path):
+    """
+    Return a DataFrame mapping channel number -> anatomical group index,
+    preserving XML order and making row order explicit.
+
+    Columns:
+      - channel: int
+      - group: int
+      - channel_order: int  (row order as encountered in XML)
+    """
+
+    recfolder_path = Path(recfolder_path)
+
+    # ------------------------------------------------------------
+    # Find XML file
+    # ------------------------------------------------------------
+
+    # Select the XML with smallest recording number (robust to paths without "recording###")
+    xml_candidates = list(recfolder_path.rglob("continuous.xml"))
+    if len(xml_candidates) == 0:
+        raise FileNotFoundError("No continuous.xml found under this recording folder.")
+
+    xml_with_index = []
+    for p in xml_candidates:
+        m = re.search(r"recording(\d+)", str(p))
+        rec_idx = int(m.group(1)) if m else float("inf")
+        xml_with_index.append((rec_idx, p))
+
+    xml_with_index.sort(key=lambda t: t[0])
+    xml_path = xml_with_index[0][1]
+
+    print(f"Using XML file: {xml_path}")
+
+    # ------------------------------------------------------------
+    # Parse XML (fallback name swap for hyphen/underscore)
+    # ------------------------------------------------------------
+    try:
+        tree = ET.parse(xml_path)
+    except FileNotFoundError:
+        print(f"Unable to parse XML file: {xml_path}")
+        return
+
+    root = tree.getroot()
+
+    rows = []
+    group_idx = 0
+
+    for desc in root.findall("anatomicalDescription"):
+        for cg in desc.findall("channelGroups"):
+            for group in cg.findall("group"):
+                for ch in group.findall("channel"):
+                    if ch.text is None:
+                        continue
+                    rows.append(
+                        {
+                            "channel_0based": int(ch.text),
+                            "channel_group": group_idx,
+                        }
+                    )
+                group_idx += 1
+
+    if not rows:
+        raise ValueError("No anatomical channel groups found in XML.")
+
+    df = pd.DataFrame(rows)
+    df.index.name = 'channel_order'
+
+    return df
 
 def add_neuroscope_mapping(probe, xml_channel_indices):
     # Sanity check for number of channels
@@ -41,89 +114,3 @@ def add_neuroscope_mapping(probe, xml_channel_indices):
     return probe
 
 
-def load_neuroscope_channels(recfolder_path, shank_groups=None):
-    """
-    Locate the session's continuous.xml file, extract anatomical channel groups,
-    and return a 1D array of channel indices for the specified shank groups.
-
-    Parameters
-    ----------
-    recfolder_path : str or Path
-        Path to the session folder containing recording* subfolders.
-    shank_groups : list, array, or None
-        Indices of anatomical groups to extract.
-        Must be specified; if None, an error is raised.
-
-    Returns
-    -------
-    xml_channel_indices : np.ndarray
-        Flattened array of channel indices belonging to the selected shanks.
-    """
-
-    if shank_groups is None:
-        raise ValueError(
-            "shank_groups must be specified (e.g. [0], [0,1], etc.) "
-            "because this function only returns channel indices."
-        )
-
-    recfolder_path = Path(recfolder_path)
-
-    # ------------------------------------------------------------
-    # Find XML file
-    # ------------------------------------------------------------
-    xml_candidates = list(recfolder_path.rglob("continuous.xml"))
-    if len(xml_candidates) == 0:
-        raise FileNotFoundError("No continuous.xml found under this recording folder.")
-
-    # Select the XML with smallest recording number
-    xml_path = sorted(
-        xml_candidates,
-        key=lambda x: int(re.search(r"recording(\\d+)", str(x)).group(1))
-    )[0]
-
-    print(f"Using XML file: {xml_path}")
-
-    # ------------------------------------------------------------
-    # Parse XML (fallback name swap for hyphen/underscore)
-    # ------------------------------------------------------------
-    try:
-        tree = ET.parse(xml_path)
-    except FileNotFoundError:
-        alt_name = (xml_path.name.replace("-", "_")
-                    if "-" in xml_path.name
-                    else xml_path.name.replace("_", "-"))
-        alt_path = xml_path.parent / alt_name
-        print(f"Trying alternative XML filename: {alt_path}")
-        tree = ET.parse(alt_path)
-
-    root = tree.getroot()
-
-    # ------------------------------------------------------------
-    # Extract anatomical channel groups ONLY
-    # ------------------------------------------------------------
-    anatomical_groups = []
-
-    for desc in root.findall("anatomicalDescription"):
-        for cg in desc.findall("channelGroups"):
-            for group in cg.findall("group"):
-                channels = [int(ch.text) for ch in group.findall("channel")]
-                if channels:
-                    anatomical_groups.append(np.array(channels))
-
-    if len(anatomical_groups) == 0:
-        raise ValueError("No anatomical channel groups found in XML.")
-
-    anatomical_groups = np.array(anatomical_groups, dtype=object)
-
-    # ------------------------------------------------------------
-    # Select shanks
-    # ------------------------------------------------------------
-    try:
-        xml_channel_indices = np.concatenate(anatomical_groups[shank_groups])
-    except IndexError:
-        raise IndexError(
-            f"shank_groups {shank_groups} exceed available groups "
-            f"(found {len(anatomical_groups)})"
-        )
-
-    return xml_channel_indices

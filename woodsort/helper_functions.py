@@ -1,10 +1,89 @@
-import pynapple as nap
+
 import json
 import pandas as pd
-from warnings import warn
-from spikeinterface.core import SortingAnalyzer, BaseSorting
 import numpy as np
 from pathlib import Path
+
+
+def get_metadata_openephys(recfolder_path, save_path=None, save_name="MetadataOpenephys.txt"):
+    """
+    Extract and save Open Ephys sync metadata from a recording session.
+
+    This function searches an Open Ephys session directory for
+    'Record Node*/recording*' folders, reads the contents of
+    'sync_messages.txt' from each recording folder, removes line breaks,
+    and writes the resulting messages to a single text file with one
+    message per line.
+
+    The order of messages in the output file follows the chronological
+    order of the recording folders.
+
+    Parameters
+    ----------
+    recfolder_path : str or Path
+        Path to the Open Ephys session directory containing
+        'Record Node*' folders.
+
+    save_path : str or Path, optional
+        Directory to save the metadata file. Created if it does not exist.
+
+    save_name : str, optional
+        Name of the output text file written to `recfolder_path`
+        (default: "MetadataOpenephys.txt").
+
+    Returns
+    -------
+    messages : list of str
+        A list of sync message strings, one per recording folder,
+        with newline characters removed.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no 'Record Node*' folder, no 'recording*' folders, or a
+        required 'sync_messages.txt' file is missing.
+    """
+
+    print("\nCollecting sync messages...")
+    recfolder_path = Path(recfolder_path)
+
+    node_path = next(
+        (p for p in recfolder_path.rglob("Record Node*") if p.is_dir()),
+        None
+    )
+    if node_path is None:
+        raise FileNotFoundError("No 'Record Node*' folder found under this path.")
+
+    recording_folders = [p for p in node_path.rglob("recording*") if p.is_dir()]
+    recording_folders.sort(key=lambda p: (len(p.parts), p.name))
+
+    if not recording_folders:
+        raise FileNotFoundError("No 'recording*' folders found under the Record Node.")
+
+    messages = []
+
+    for rec_folder in recording_folders:
+        sync_path = rec_folder / "sync_messages.txt"
+        if not sync_path.exists():
+            raise FileNotFoundError(f"Missing: {sync_path}")
+
+        text = sync_path.read_text(encoding="utf-8", errors="replace")
+        text = " ".join(text.splitlines())  # remove \n cleanly
+        messages.append(text)
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
+    else:
+        save_path = recfolder_path
+
+    with open(save_path / save_name, "w", encoding="utf-8") as f:
+        for msg in messages:
+            f.write(f"{msg}\n")
+
+    print(f"Sync metadata written to: {save_path / save_name}")
+
+    return messages
 
 def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimestamps.csv'):
     """
@@ -29,7 +108,7 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
             'start' : epoch start time in seconds
             'end'   : epoch end time in seconds
     """
-    print('\nExtracting epoch timestamps...')
+    print('\nExtracting recording boundaries...')
     recfolder_path = Path(recfolder_path)
 
     # ------------------------------------------------------------
@@ -57,7 +136,7 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
 
     for rec_folder in recording_folders:
 
-        print(f"\nExtracting start and end times: {rec_folder}")
+        print(f"Extracting start and end times: {rec_folder}")
 
         # Load sample rate from structure.oebin
         oebin_path = rec_folder / "structure.oebin"
@@ -110,11 +189,8 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
     # ------------------------------------------------------------
     # Build DataFrame
     # ------------------------------------------------------------
-    epoch_df = pd.DataFrame(epochs_all, columns=["start", "end"])
+    epoch_df = pd.DataFrame(epochs_all, columns=["Start", "End"])
 
-    # ------------------------------------------------------------
-    # Save if requested
-    # ------------------------------------------------------------
     if save_path is not None:
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
@@ -130,99 +206,6 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
 
     return epoch_df
 
-
-
-### Export to Pynapple ###
-def export_to_pynapple(
-        sorting_analyzer_or_sorting: SortingAnalyzer | BaseSorting,
-        attach_unit_metadata=True,
-        segment_index=None,
-):
-    """
-    This is a modification of to_pynapple_tsgroup function from SpikeInterface, with fixed bug with addding metadata
-    Returns a pynapple TsGroup object based on spike train data.
-
-    Parameters
-    ----------
-    sorting_analyzer_or_sorting : SortingAnalyzer
-        A SortingAnalyzer object
-    attach_unit_metadata : bool, default: True
-        If True, any relevant available metadata is attached to the TsGroup. Will attach
-        `unit_locations`, `quality_metrics` and `template_metrics` if computed. If False,
-        no metadata is included.
-    segment_index : int | None, default: None
-        The segment index. Can be None if mono-segment sorting.
-
-    Returns
-    -------
-    spike_train_TsGroup : pynapple.TsGroup
-        A TsGroup object from the pynapple package.
-    """
-
-    if isinstance(sorting_analyzer_or_sorting, SortingAnalyzer):
-        sorting = sorting_analyzer_or_sorting.sorting
-    elif isinstance(sorting_analyzer_or_sorting, BaseSorting):
-        sorting = sorting_analyzer_or_sorting
-    else:
-        raise TypeError(
-            f"The `sorting_analyzer_or_sorting` argument must be a SortingAnalyzer or Sorting object, not a {type(sorting_analyzer_or_sorting)} type object."
-        )
-
-    unit_ids = sorting.unit_ids
-
-    unit_ids_castable = True
-    try:
-        unit_ids_ints = [int(unit_id) for unit_id in unit_ids]
-    except ValueError:
-        warn_msg = "Pynapple requires integer unit ids, but `unit_ids` cannot be cast to int. "
-        warn_msg += "We will set the index of the TsGroup to [0,1,2,...] and attach the original "
-        warn_msg += "unit ids to the TsGroup as metadata with the name 'unit_id'."
-        warn(warn_msg)
-        unit_ids_ints = np.arange(len(unit_ids))
-        unit_ids_castable = False
-
-    spikes_trains = {
-        unit_id_int: sorting.get_unit_spike_train(unit_id=unit_id, return_times=True, segment_index=segment_index)
-        for unit_id_int, unit_id in zip(unit_ids_ints, unit_ids)
-    }
-
-    metadata_list = []
-    if not unit_ids_castable:
-        metadata_list.append(pd.DataFrame(unit_ids, columns=["unit_id"]))
-
-    # Look for good metadata to add, if there is a sorting analyzer
-    if attach_unit_metadata and isinstance(sorting_analyzer_or_sorting, SortingAnalyzer):
-
-        metadata_list = []
-        if (unit_locations := sorting_analyzer_or_sorting.get_extension("unit_locations")) is not None:
-            array_of_unit_locations = unit_locations.get_data()
-            n_dims = np.shape(sorting_analyzer_or_sorting.get_extension("unit_locations").get_data())[1]
-            pd_of_unit_locations = pd.DataFrame(
-                array_of_unit_locations, columns=["x", "y", "z"][:n_dims], index=unit_ids
-            )
-            metadata_list.append(pd_of_unit_locations)
-        if (quality_metrics := sorting_analyzer_or_sorting.get_extension("quality_metrics")) is not None:
-            metadata_list.append(quality_metrics.get_data())
-        if (template_metrics := sorting_analyzer_or_sorting.get_extension("template_metrics")) is not None:
-            metadata_list.append(template_metrics.get_data())
-
-    if len(metadata_list) > 0:
-        metadata = pd.concat(metadata_list, axis=1)
-        metadata.index = unit_ids_ints
-    else:
-        metadata = None
-
-    spike_train_tsgroup = nap.TsGroup(
-        {unit_id: nap.Ts(spike_train) for unit_id, spike_train in spikes_trains.items()},
-    )
-
-    # Adrian's fix: add metadata dataframe as individual series:
-    if metadata is not None:
-        for col_name in metadata.columns:
-            # Add each column (Series) to the TsGroup, using the column name as the key
-            spike_train_tsgroup[col_name] = metadata[col_name]
-
-    return spike_train_tsgroup
 
 
 

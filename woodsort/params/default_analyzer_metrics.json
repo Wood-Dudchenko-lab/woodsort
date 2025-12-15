@@ -1,0 +1,19 @@
+{
+  "unit_locations": {},
+  "random_spikes": {},
+  "noise_levels": {},
+  "waveforms": {
+    "ms_before": 0.8,
+    "ms_after": 1.2
+  },
+  "templates": {},
+  "spike_amplitudes": {},
+  "spike_locations": {},
+  "correlograms": {},
+  "quality_metrics": {},
+  "template_similarity": {},
+  "principal_components": {},
+  "template_metrics": {
+    "include_multi_channel_metrics": true
+  }
+}

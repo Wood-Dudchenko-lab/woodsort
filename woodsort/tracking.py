@@ -357,17 +357,16 @@ def process_tracking_bonsai(
     hd[~mask] = np.nan
 
     # --- Velocity ---
-    dt = np.median(np.diff(t))
-    vel = np.hypot(np.diff(pos_x), np.diff(pos_y)) / dt
-    vel = np.insert(vel, 0, np.nan)
+    #dt = np.median(np.diff(t))
+    #vel = np.hypot(np.diff(pos_x), np.diff(pos_y)) / dt
+    #vel = np.insert(vel, 0, np.nan)
 
     # --- Pandas conversion ---
     tracking_df = pd.DataFrame(
         {
             "x": pos_x,
             "y": pos_y,
-            "hd": hd,
-            "velocity": vel
+            "hd": hd
         },
         index=t
     )
