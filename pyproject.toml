@@ -16,7 +16,9 @@ dependencies = [
   "pyqt5>=5.15.11,<6.0.0",
   "pyqtgraph>=0.14.0,<0.15.0",
   "mountainsort5>=0.5.8,<0.6.0",
-  "opencv-python>=4.8.0"  # add if you want this CLI to always work
+  "opencv-python>=4.8.0",  # add if you want this CLI to always work
+  "neuroconv (>=0.9.0,<0.10.0)",
+  "openpyxl (>=3.1.5,<4.0.0)"
 ]
 
 [build-system]
