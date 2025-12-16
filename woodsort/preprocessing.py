@@ -54,11 +54,7 @@ def process_openephys_with_neuroscope(
     # Attach probe
     recording = recording.set_probe(probe, group_mode="by_shank")
     p = recording.get_probe()
-    print('Device channel indices and contact ids after adding to the recording')
-    #print(p.device_channel_indices)
-    #print('Channel ids after adding to the recording')
-    #print(p.contact_ids)
-    pprint(dict(zip(probe.device_channel_indices, probe.contact_ids)))
+
 
     #print(p.contact_ids)
 
@@ -68,9 +64,6 @@ def process_openephys_with_neuroscope(
 
     # now concatenate all recordings and split by shank
     recording = si.concatenate_recordings([recording])
-
-
-
     recording = recording.split_by("group")
 
 
@@ -85,7 +78,7 @@ def process_openephys_with_neuroscope(
 
     # filter + bad channel removal
     recording = si.bandpass_filter(recording)
-    recording = si.detect_and_remove_bad_channels(recording)
+    #recording = si.detect_and_remove_bad_channels(recording)
 
     # get IDs of bad channels (0 based)
     bad_ids = []
