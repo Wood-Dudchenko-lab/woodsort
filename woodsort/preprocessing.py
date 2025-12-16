@@ -1,6 +1,7 @@
 import spikeinterface.full as si
 import woodsort.neuroscope as neuroscope
 import numpy as np
+from pprint import pprint
 
 def process_openephys_with_neuroscope(
     recording,
@@ -40,8 +41,11 @@ def process_openephys_with_neuroscope(
         neuroscope_channel_indices
     )
 
-    print('Device channel indices before adding to the recording')
-    print(probe.device_channel_indices)
+    print('Device channel indices and contact ids before adding to the recording')
+    #print(probe.device_channel_indices)
+    #print('Channel ids before adding to the recording')
+    #print(probe.contact_ids)
+    pprint(dict(zip(probe.device_channel_indices, probe.contact_ids)))
 
     # Sort channel IDs so they are labelled in descending fashion (RESETS AFTER PROBE ADDED TO REC):
     #probe.set_contact_ids(np.sort(probe.contact_ids.astype(int)).astype(str))
@@ -50,32 +54,25 @@ def process_openephys_with_neuroscope(
     # Attach probe
     recording = recording.set_probe(probe, group_mode="by_shank")
     p = recording.get_probe()
-    print('Device channel indices after adding to the recording')
-    print(p.device_channel_indices)
+    print('Device channel indices and contact ids after adding to the recording')
+    #print(p.device_channel_indices)
+    #print('Channel ids after adding to the recording')
+    #print(p.contact_ids)
+    pprint(dict(zip(probe.device_channel_indices, probe.contact_ids)))
 
     #print(p.contact_ids)
 
     if plot_probe:
         si.plot_probe_map(recording, with_device_index=True)
-        # si.plot_probe_map(recording, with_channel_ids=True)
+        si.plot_probe_map(recording, with_channel_ids=True)
 
     # now concatenate all recordings and split by shank
     recording = si.concatenate_recordings([recording])
 
 
-    p = recording.get_probe()
-    print('Device channel indices before splitting by group')
-    print(p.device_channel_indices)
 
     recording = recording.split_by("group")
 
-    p = recording[0].get_probe()
-    print('Device channel indices after splitting by group')
-    print(p.device_channel_indices)
-
-    if plot_probe:
-        si.plot_probe_map(recording[0], with_device_index=True)
-    # si.plot_probe_map(recording, with_channel_ids=True)
 
 
     for group_id, rec_g in recording.items():
@@ -89,10 +86,6 @@ def process_openephys_with_neuroscope(
     # filter + bad channel removal
     recording = si.bandpass_filter(recording)
     recording = si.detect_and_remove_bad_channels(recording)
-
-    if plot_probe:
-        si.plot_probe_map(recording[0], with_device_index=True)
-    # si.plot_probe_map(recording, with_channel_ids=True)
 
     # get IDs of bad channels (0 based)
     bad_ids = []

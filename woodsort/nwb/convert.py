@@ -92,7 +92,7 @@ def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None):
     )
 
     n_units = waveforms.shape[0]
-    waveforms = waveforms[np.arange(n_units), :, extremum_chan_idx]
+    #waveforms = waveforms[np.arange(n_units), :, extremum_chan_idx]
 
     all_unit_metadata = pd.concat(
         [
