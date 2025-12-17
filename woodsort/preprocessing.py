@@ -42,21 +42,10 @@ def process_openephys_with_neuroscope(
     )
 
     print('Device channel indices and contact ids before adding to the recording')
-    #print(probe.device_channel_indices)
-    #print('Channel ids before adding to the recording')
-    #print(probe.contact_ids)
     pprint(dict(zip(probe.device_channel_indices, probe.contact_ids)))
-
-    # Sort channel IDs so they are labelled in descending fashion (RESETS AFTER PROBE ADDED TO REC):
-    #probe.set_contact_ids(np.sort(probe.contact_ids.astype(int)).astype(str))
-    #print(probe.contact_ids)
 
     # Attach probe
     recording = recording.set_probe(probe, group_mode="by_shank")
-    p = recording.get_probe()
-
-
-    #print(p.contact_ids)
 
     if plot_probe:
         si.plot_probe_map(recording, with_device_index=True)
