@@ -10,7 +10,8 @@ def process_openephys_with_neuroscope(
     shank_groups,
     plot_probe=False,
     plot_range=None,
-    save_mapping=True
+    save_mapping=True,
+    remove_bad_channels=True
 ):
     """
     Load Neuroscope XML channel mapping, attach probe to recording,
@@ -41,8 +42,8 @@ def process_openephys_with_neuroscope(
         neuroscope_channel_indices
     )
 
-    print('Device channel indices and contact ids before adding to the recording')
-    pprint(dict(zip(probe.device_channel_indices, probe.contact_ids)))
+    #print('Device channel indices and contact ids before adding to the recording')
+    #pprint(dict(zip(probe.device_channel_indices, probe.contact_ids)))
 
     # Attach probe
     recording = recording.set_probe(probe, group_mode="by_shank")
@@ -66,27 +67,31 @@ def process_openephys_with_neuroscope(
             )
 
     # filter + bad channel removal
+    print('Applying high-pass filter...')
     recording = si.bandpass_filter(recording)
-    #recording = si.detect_and_remove_bad_channels(recording)
 
-    # get IDs of bad channels (0 based)
-    bad_ids = []
-    for rec_g in recording.values():
-        bad = rec_g._kwargs.get("bad_channel_ids")
-        if bad is None:
-            continue
-        for ch in bad:
-            # ch is something like 'CH17' or np.str_('CH17')
-            bad_ids.append(int(str(ch)[2:]) - 1)
+    if remove_bad_channels:
+        print('Detecting and removing bad channels...')
+        recording = si.detect_and_remove_bad_channels(recording)
 
-    print(f'Bad channel IDs (0-based): {bad_ids}')
+        # get IDs of bad channels (0 based)
+        bad_ids = []
+        for rec_g in recording.values():
+            bad = rec_g._kwargs.get("bad_channel_ids")
+            if bad is None:
+                continue
+            for ch in bad:
+                # ch is something like 'CH17' or np.str_('CH17')
+                bad_ids.append(int(str(ch)[2:]) - 1)
 
-    # mark bad channels in channel mapping
-    channel_mapping["is_bad"] = False
-    channel_mapping.loc[
-        channel_mapping["channel_0based"].isin(bad_ids),
-        "is_bad"
-    ] = True
+        print(f'Bad channel IDs (0-based): {bad_ids}')
+
+        # mark bad channels in channel mapping
+        channel_mapping["is_bad"] = False
+        channel_mapping.loc[
+            channel_mapping["channel_0based"].isin(bad_ids),
+            "is_bad"
+        ] = True
 
     # save channel mapping
     if save_mapping:

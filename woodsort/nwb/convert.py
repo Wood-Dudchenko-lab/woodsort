@@ -19,11 +19,9 @@ import matplotlib.pyplot as plt
 
 
 def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None):
-
     print("Adding SpikeInterface units and metrics to the NWB file...")
     si.set_global_job_kwargs(n_jobs=12)
     sorting_analyzer = si.load_sorting_analyzer(analyzer_path)
-
 
     # default curation path
     if curation_path is None:
@@ -44,9 +42,6 @@ def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None):
     # get stuff from analyzer and sorting
     add_sorting_to_nwbfile(sorting_analyzer.sorting, nwbfile)
 
-    # add recording info
-
-
     # quality metrics
     quality_metrics = sorting_analyzer.get_extension('quality_metrics').get_data()
 
@@ -56,43 +51,9 @@ def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None):
     # unit locations
     probe_locations = sorting_analyzer.get_extension("unit_locations").get_data()
 
-    # waveforms
-    waveforms = sorting_analyzer.get_extension("templates").get_data()
-    waveforms = np.asarray(waveforms, dtype=np.float32)
-
     probe_locations_df = pd.DataFrame()
     for coord, data in zip(["x", "y", "z"], probe_locations.T, strict=True):
         probe_locations_df[f"coord_est_{coord}"] = data
-
-    # and which channel the extremal template (template with max amp) is on
-    # --- max channel per unit (0-based index) ---
-
-    ext_map = si.get_template_extremum_channel(
-        sorting_analyzer, peak_sign="neg", outputs="id"
-    )  # dict: unit_id -> "CH##"
-
-    extremum_channel = np.array(
-        [int(str(ext_map[uid]).replace("CH", "")) for uid in ext_map],
-        dtype=int
-    )
-
-    probe_locations_df["extremum_channel"] = extremum_channel
-
-    # now pick only the biggest waveform based on extremum channel
-
-    channel_ids = np.array(
-        [int(ch.replace("CH", "")) for ch in sorting_analyzer.channel_ids],
-        dtype=int
-    )
-
-    chan_id_to_index = {cid: i for i, cid in enumerate(channel_ids)}
-    extremum_chan_idx = np.array(
-        [chan_id_to_index[cid] for cid in extremum_channel],
-        dtype=int
-    )
-
-    n_units = waveforms.shape[0]
-    #waveforms = waveforms[np.arange(n_units), :, extremum_chan_idx]
 
     all_unit_metadata = pd.concat(
         [
@@ -115,6 +76,13 @@ def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None):
             data=unit_data.to_numpy(),
             description=f"{column_name}, computed using spikeinterface.",
         )
+
+    # Finally WAVEFORMS: it's a lot of work because they are sorted according to probe mapping
+    waveforms = sorting_analyzer.get_extension("templates").get_data()
+    mapping = dict(zip(sorting_analyzer.get_probe().device_channel_indices, sorting_analyzer.get_probe().contact_ids))
+    order = sorted(mapping, key=lambda k: int(mapping[k]))
+    print(waveforms.shape)
+    waveforms = waveforms[:, :, order]  # sort according to probe mapping
 
     nwbfile.units.add_column(
         name="waveform_mean",
