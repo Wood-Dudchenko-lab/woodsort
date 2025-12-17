@@ -77,10 +77,12 @@ def load_neuroscope_channels(recfolder_path):
     return df
 
 def add_neuroscope_mapping(probe, xml_channel_indices):
+
     # Sanity check for number of channels
     if probe.get_contact_count() != len(xml_channel_indices):
         print("Number of Neuroscope channels doesn't match the SpikeInterface probe!")  # Sanity check for xml channel indices
         print("Check Neuroscope mapping")  # Sanity check for xml channel indices
+
 
     # Sort contact positions based on shank IDs and y-coordinates
     shank_ids = probe.shank_ids
