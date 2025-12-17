@@ -18,7 +18,7 @@ import json
 import matplotlib.pyplot as plt
 
 
-def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None):
+def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None, merging_mode='soft'):
     print("Adding SpikeInterface units and metrics to the NWB file...")
     si.set_global_job_kwargs(n_jobs=12)
     sorting_analyzer = si.load_sorting_analyzer(analyzer_path)
@@ -34,10 +34,8 @@ def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None):
             "Run SpikeInterface GUI curation first or provide a valid curation_path."
         )
 
-    with open(curation_path, "r") as f:
-        curation_dict = json.load(f)
-
-    sorting_analyzer = si.apply_curation(sorting_analyzer, curation_dict, merging_mode='soft')
+    curation_dict = json.load(open(curation_path, "r"))
+    sorting_analyzer = si.apply_curation(sorting_analyzer, curation_dict, merging_mode=merging_mode)
 
     # get stuff from analyzer and sorting
     add_sorting_to_nwbfile(sorting_analyzer.sorting, nwbfile)
