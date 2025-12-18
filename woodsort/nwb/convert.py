@@ -24,14 +24,11 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     # set number of parallel CPU cores to use for feature recalculation
     si.set_global_job_kwargs(n_jobs=n_jobs)
 
-    print("Adding SpikeInterface units and metrics to the NWB file...")
+    print("\nAdding SpikeInterface units and metrics to the NWB file...")
 
     # default curation path
     if curation_path is None:
         curation_path = Path(analyzer.folder) / "spikeinterface_gui/curation_data.json"
-
-
-
 
     # apply manual curation
     if not curation_path.exists():
@@ -41,10 +38,12 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
         )
 
     curation_dict = json.load(open(curation_path, "r"))
-    sorting_analyzer = si.apply_curation(analyzer, curation_dict, merging_mode=merging_mode)
+
+    print(f"\nApplying curation from file {curation_path}")
+    analyzer = si.apply_curation(analyzer, curation_dict, merging_mode=merging_mode)
 
     # add spike sorting to the nwb file
-    add_sorting_to_nwbfile(sorting_analyzer.sorting, nwbfile)
+    add_sorting_to_nwbfile(analyzer.sorting, nwbfile)
 
     # add recording metadata to nwb file
     add_recording_metadata_to_nwbfile(analyzer.recording, nwbfile)  # probe, electrodes, electrode groups
@@ -52,9 +51,9 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     print(electrodes_table)
 
     # Now add extra info for each unit
-    quality_metrics = sorting_analyzer.get_extension('quality_metrics').get_data()  # quality metrics
-    template_metrics = sorting_analyzer.get_extension('template_metrics').get_data()  # template metrics
-    probe_locations = sorting_analyzer.get_extension("unit_locations").get_data() # unit locations
+    quality_metrics = analyzer.get_extension('quality_metrics').get_data()  # quality metrics
+    template_metrics = analyzer.get_extension('template_metrics').get_data()  # template metrics
+    probe_locations = analyzer.get_extension("unit_locations").get_data() # unit locations
 
     probe_locations_df = pd.DataFrame()
     for coord, data in zip(["x", "y", "z"], probe_locations.T, strict=True):
@@ -83,7 +82,7 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
         )
 
     # Finally WAVEFORMS
-    waveforms = sorting_analyzer.get_extension("templates").get_data()
+    waveforms = analyzer.get_extension("templates").get_data()
     # Code to sort waveforms according to spatial sequence
     #mapping = dict(zip(sorting_analyzer.get_probe().device_channel_indices, sorting_analyzer.get_probe().contact_ids))
     #order = sorted(mapping, key=lambda k: int(mapping[k]))
