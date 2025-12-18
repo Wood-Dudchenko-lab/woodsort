@@ -111,6 +111,9 @@ def add_neuroscope_mapping(probe, xml_channel_indices):
     # Set device channel indices
     probe.set_device_channel_indices(xml_channel_indices)
 
+    # Add annotation about corresponding DAT file acquisition channels
+    probe.annotate_contacts(acquisition_channel=xml_channel_indices)
+
     print("Probe updated with Neuroscope mapping")
 
     return probe

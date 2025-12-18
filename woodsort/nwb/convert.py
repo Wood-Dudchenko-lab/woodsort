@@ -15,17 +15,23 @@ import spikeinterface.full as si
 from neuroconv.tools.spikeinterface import add_sorting_to_nwbfile, add_recording_metadata_to_nwbfile
 import pandas as pd
 import json
+from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None, merging_mode='soft'):
+def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_mode='hard', n_jobs=12):
+
+    # set number of parallel CPU cores to use for feature recalculation
+    si.set_global_job_kwargs(n_jobs=n_jobs)
+
     print("Adding SpikeInterface units and metrics to the NWB file...")
-    si.set_global_job_kwargs(n_jobs=12)
-    sorting_analyzer = si.load_sorting_analyzer(analyzer_path)
 
     # default curation path
     if curation_path is None:
-        curation_path = analyzer_path / "spikeinterface_gui/curation_data.json"
+        curation_path = Path(analyzer.folder) / "spikeinterface_gui/curation_data.json"
+
+
+
 
     # apply manual curation
     if not curation_path.exists():
@@ -35,19 +41,20 @@ def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None, merging
         )
 
     curation_dict = json.load(open(curation_path, "r"))
-    sorting_analyzer = si.apply_curation(sorting_analyzer, curation_dict, merging_mode=merging_mode)
+    sorting_analyzer = si.apply_curation(analyzer, curation_dict, merging_mode=merging_mode)
 
-    # get stuff from analyzer and sorting
+    # add spike sorting to the nwb file
     add_sorting_to_nwbfile(sorting_analyzer.sorting, nwbfile)
 
-    # quality metrics
-    quality_metrics = sorting_analyzer.get_extension('quality_metrics').get_data()
+    # add recording metadata to nwb file
+    add_recording_metadata_to_nwbfile(analyzer.recording, nwbfile)  # probe, electrodes, electrode groups
+    electrodes_table = nwbfile.electrodes.to_dataframe()  # electrode_name is anatomical index (top-bottom shank-wise)
+    print(electrodes_table)
 
-    # template metrics
-    template_metrics = sorting_analyzer.get_extension('template_metrics').get_data()
-
-    # unit locations
-    probe_locations = sorting_analyzer.get_extension("unit_locations").get_data()
+    # Now add extra info for each unit
+    quality_metrics = sorting_analyzer.get_extension('quality_metrics').get_data()  # quality metrics
+    template_metrics = sorting_analyzer.get_extension('template_metrics').get_data()  # template metrics
+    probe_locations = sorting_analyzer.get_extension("unit_locations").get_data() # unit locations
 
     probe_locations_df = pd.DataFrame()
     for coord, data in zip(["x", "y", "z"], probe_locations.T, strict=True):
@@ -75,12 +82,13 @@ def add_units_spikeinterface(nwbfile, analyzer_path, curation_path=None, merging
             description=f"{column_name}, computed using spikeinterface.",
         )
 
-    # Finally WAVEFORMS: it's a lot of work because they are sorted according to probe mapping
+    # Finally WAVEFORMS
     waveforms = sorting_analyzer.get_extension("templates").get_data()
-    mapping = dict(zip(sorting_analyzer.get_probe().device_channel_indices, sorting_analyzer.get_probe().contact_ids))
-    order = sorted(mapping, key=lambda k: int(mapping[k]))
-    print(waveforms.shape)
-    waveforms = waveforms[:, :, order]  # sort according to probe mapping
+    # Code to sort waveforms according to spatial sequence
+    #mapping = dict(zip(sorting_analyzer.get_probe().device_channel_indices, sorting_analyzer.get_probe().contact_ids))
+    #order = sorted(mapping, key=lambda k: int(mapping[k]))
+    #print(waveforms.shape)
+    #waveforms = waveforms[:, :, order]  # sort according to probe mapping
 
     nwbfile.units.add_column(
         name="waveform_mean",
@@ -417,7 +425,7 @@ def add_epochs(nwbfile, epochs, metadata):
     return nwbfile
 
 
-def add_lfp(nwbfile, lfp_path, xml_data):
+def add_lfp(nwbfile, lfp_path, xml_data=None):
     print('Adding LFP to the NWB file...')
 
     all_table_region = nwbfile.create_electrode_table_region(
@@ -425,14 +433,27 @@ def add_lfp(nwbfile, lfp_path, xml_data):
         description='all electrodes',
     )
 
-    # get channel numbers in shank order
-    chan_order = np.concatenate(xml_data['spike_groups'])
+    # Option to use xml data to get channel order (assumes anatomical order)
+    # Otherwise match channels from the electrode group
+    if xml_data is not None:
+        # get channel numbers in shank order
+        chan_order = np.concatenate(xml_data['spike_groups'])
 
-    # lazy load LFP
-    lfp_data = nap.load_eeg(filepath=lfp_path, channel=None, n_channels=xml_data['n_channels'],
-                            frequency=float(xml_data['eeg_sampling_rate']), precision='int16',
-                            bytes_size=2)
-    lfp_data = lfp_data[:, chan_order]  # get only probe channels
+        # lazy load LFP
+        lfp_data = nap.load_eeg(filepath=lfp_path, channel=None, n_channels=xml_data['n_channels'],
+                                frequency=float(xml_data['eeg_sampling_rate']), precision='int16',
+                                bytes_size=2)
+        lfp_data = lfp_data[:, chan_order]  # get only probe channels
+
+    else:
+        electrodes_table = nwbfile.electrodes.to_dataframe()  # electrode_name is anatomical index (top-bottom shank-wise)
+        chan_order = electrodes_table['channel_name'].str.replace('CH', '', regex=False).astype(
+            int).to_numpy() - 1  # now channel_name is the dat file channel index (0-based)
+
+
+        print(chan_order)
+        return
+
 
     # create ElectricalSeries
     lfp_elec_series = ElectricalSeries(
