@@ -5,7 +5,7 @@
         {
             "ndim": 2,
             "si_units": "um",
-            "annotations": {},
+            "annotations": {"model_name": "Buzsaki64sp", "manufacturer": "NeuroNexus"},
             "contact_annotations": {},
             "contact_positions": [
                 [

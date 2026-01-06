@@ -16,8 +16,7 @@ from neuroconv.tools.spikeinterface import add_sorting_to_nwbfile, add_recording
 import pandas as pd
 import json
 from pathlib import Path
-import matplotlib.pyplot as plt
-
+from neuroconv.tools.nwb_helpers import get_default_nwbfile_metadata
 
 def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_mode='hard', n_jobs=12):
 
@@ -42,6 +41,9 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     print(f"\nApplying curation from file {curation_path}")
     analyzer = si.apply_curation(analyzer, curation_dict, merging_mode=merging_mode)
 
+    # convert probe info to the NeuroConv format
+    metadata_neuroconv = get_default_nwbfile_metadata()
+
     # add spike sorting to the nwb file
     add_sorting_to_nwbfile(analyzer.sorting, nwbfile)
 
@@ -49,8 +51,6 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     add_recording_metadata_to_nwbfile(analyzer.recording, nwbfile)  # probe, electrodes, electrode groups
     electrodes_table = nwbfile.electrodes.to_dataframe()  # electrode_name is anatomical index (top-bottom shank-wise)
     #print(electrodes_table)
-
-
 
     # Now add extra info for each unit
     quality_metrics = analyzer.get_extension('quality_metrics').get_data()  # quality metrics
