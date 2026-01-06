@@ -149,7 +149,19 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
         sample_rate = oebin["continuous"][0]["sample_rate"]
 
         # --------------------------------------------------------
-        # Locate sample_numbers.npy
+        # locate sync_messages.txt to get the 'rec' start timestamp in 'play' time
+        # --------------------------------------------------------
+        sync_path = rec_folder / "sync_messages.txt"
+        if not sync_path.exists():
+            raise FileNotFoundError(f"Missing: {sync_path}")
+
+        with open(sync_path, "r") as f:
+            last_line = f.readlines()[-1]
+
+        rec_start = int(last_line.split()[-1])
+
+        # --------------------------------------------------------
+        # Locate sample_numbers.npy to get start and end timestamps in 'play' time
         # --------------------------------------------------------
         continuous_folder = rec_folder / "continuous"
         sample_files = list(continuous_folder.rglob("sample_numbers.npy"))
@@ -172,10 +184,10 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
             raise ValueError(f"sample_numbers.npy in {rec_folder} is malformed.")
 
         # --------------------------------------------------------
-        # Convert start/end to *global* sample numbers
+        # Convert start/end to *global* sample numbers (all recordings merged together)
         # --------------------------------------------------------
-        start_sample = sample_numbers[0] + samples_so_far
-        end_sample = sample_numbers[-1] + samples_so_far
+        start_sample = sample_numbers[0] - rec_start + samples_so_far
+        end_sample = sample_numbers[-1] - rec_start + samples_so_far
 
         # Store epoch (in seconds)
         epochs_all.append([
@@ -184,7 +196,7 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
         ])
 
         # Update running offset for next recording
-        samples_so_far += (end_sample - start_sample)
+        samples_so_far += (end_sample - start_sample) + 1
 
     # ------------------------------------------------------------
     # Build DataFrame

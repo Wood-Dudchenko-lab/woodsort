@@ -48,12 +48,15 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     # add recording metadata to nwb file
     add_recording_metadata_to_nwbfile(analyzer.recording, nwbfile)  # probe, electrodes, electrode groups
     electrodes_table = nwbfile.electrodes.to_dataframe()  # electrode_name is anatomical index (top-bottom shank-wise)
-    print(electrodes_table)
+    #print(electrodes_table)
+
+
 
     # Now add extra info for each unit
     quality_metrics = analyzer.get_extension('quality_metrics').get_data()  # quality metrics
     template_metrics = analyzer.get_extension('template_metrics').get_data()  # template metrics
-    probe_locations = analyzer.get_extension("unit_locations").get_data() # unit locations
+    probe_locations = analyzer.get_extension("unit_locations").get_data()  # unit locations
+    sampling_rate = pd.DataFrame({"sampling_rate": analyzer.recording.sampling_frequency}, index=quality_metrics.index)
 
     probe_locations_df = pd.DataFrame()
     for coord, data in zip(["x", "y", "z"], probe_locations.T, strict=True):
@@ -62,6 +65,7 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     all_unit_metadata = pd.concat(
         [
             probe_locations_df.reset_index(drop=True),
+            sampling_rate.reset_index(drop=True),
             quality_metrics.reset_index(drop=True),
             template_metrics.reset_index(drop=True),
         ],
