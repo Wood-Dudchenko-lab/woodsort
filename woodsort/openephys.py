@@ -101,11 +101,10 @@ def process_openephys_with_neuroscope(
                 "(t_start, t_end)"
             )
 
-    # Change channel names in the recording to match Neuroscope (0-base sequential integers)
+    # Change channel ids in the recording to match Neuroscope (0-base sequential integers)
     channel_ids = recording.get_channel_ids()
-    new_channel_ids = list(range(len(channel_ids)))
+    new_channel_ids = [int(ch[2:]) - 1 for ch in channel_ids]
     recording = recording.rename_channels(new_channel_ids)
-    recording.set_property('channel_name', new_channel_ids) # this is used by NeuroConv when creating ElectrodeTable (column 'channel_name')
 
     # Load Neuroscope channel mapping
     channel_mapping = neuroscope.load_neuroscope_channels(session_path)

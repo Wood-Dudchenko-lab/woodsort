@@ -43,6 +43,10 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     print(f"\nApplying curation from file {curation_path}")
     analyzer = si.apply_curation(analyzer, curation_dict, merging_mode=merging_mode)
 
+    # neuroConv uses hard-coded channel_names from recording (bug), let's replace them with the updated values from analyzer
+    channel_names = analyzer.get_recording_property('channel_name')  # channel_names updated earlier
+    analyzer.recording.set_property('channel_name', channel_names)  # change hard-coded names
+
     # convert probe info to the NeuroConv format
     metadata_neuroconv = get_default_nwbfile_metadata()
 
@@ -127,7 +131,7 @@ def add_lfp(nwbfile, lfp_path, sampling_rate=None):
 
     # Find out which DAT channels are in the NWB file
     electrodes_table = nwbfile.electrodes.to_dataframe()
-    channel_index = electrodes_table['channel_name'].str.replace('CH', '', regex=False).to_numpy().astype(int) - 1  # neuroscope index
+    channel_index = electrodes_table['channel_name'].to_numpy().astype(int)  # neuroscope index
     lfp_data = lfp_data[:, channel_index]  # get only channels present in the electrode table
 
     # Add LFP to the NWB file
