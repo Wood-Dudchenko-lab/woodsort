@@ -17,6 +17,8 @@ import pandas as pd
 import json
 from pathlib import Path
 from neuroconv.tools.nwb_helpers import get_default_nwbfile_metadata
+import xml.etree.ElementTree as ET
+
 
 def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_mode='hard', n_jobs=12):
 
@@ -101,6 +103,165 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
 
     return nwbfile
 
+
+def add_lfp(nwbfile, lfp_path, sampling_rate=None):
+
+
+    print('Adding LFP to the NWB file...')
+
+    lfp_path = Path(lfp_path)
+
+    # Get n_channels from the xml file
+    xml_path = lfp_path.with_suffix(".xml")
+
+    if not xml_path.exists():
+        raise FileNotFoundError(f"No XML file found at: {xml_path}")
+
+    root = ET.parse(xml_path).getroot()
+    n_channels = root.findtext("acquisitionSystem/nChannels")
+    sampling_rate = root.findtext("fieldPotentials/lfpSamplingRate")
+
+    # lazy load LFP
+    lfp_data = nap.load_eeg(filepath=str(lfp_path), channel=None, n_channels=int(n_channels),
+                            frequency=float(sampling_rate), precision='int16', bytes_size=2)
+
+    # Find out which DAT channels are in the NWB file
+    electrodes_table = nwbfile.electrodes.to_dataframe()
+    channel_index = electrodes_table['channel_name'].str.replace('CH', '', regex=False).to_numpy().astype(int) - 1  # neuroscope index
+    lfp_data = lfp_data[:, channel_index]  # get only channels present in the electrode table
+
+    # Add LFP to the NWB file
+
+    all_table_region = nwbfile.create_electrode_table_region(
+        region=list(range(len(nwbfile.electrodes))),
+        description='all electrodes',
+    )
+
+    # create ElectricalSeries
+    lfp_elec_series = ElectricalSeries(
+        name='LFP',
+        data=H5DataIO(lfp_data, compression=True),  # use this function to compress
+        description='Local field potential (downsampled DAT file)',
+        electrodes=all_table_region,
+        rate=float(sampling_rate)
+    )
+
+    # store ElectricalSeries in an LFP container
+    warnings.filterwarnings("ignore",
+                            message=".*DynamicTableRegion.*")  # this is to supress a warning here that doesn't seem cause any issues
+    lfp = LFP(electrical_series=lfp_elec_series)
+    warnings.resetwarnings()
+
+    # Create an extracellular ephys module or add to the existing one
+    if 'ecephys' not in nwbfile.processing:
+        ecephys_module = nwbfile.create_processing_module(name='ecephys',
+                                                          description='Processed electrophysiological signals'
+                                                          )
+        ecephys_module.add(lfp)
+    else:
+        nwbfile.processing['ecephys'].add(lfp)
+
+    return nwbfile
+
+
+def add_event_intervals(nwbfile, event_df, event_name="events"):
+    """
+    Convert a 'time'/'event' DataFrame to NWB TimeIntervals and add to the file.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to add events to.
+    event_df : pd.DataFrame
+        DataFrame with columns 'time' and 'event' (positive=start, negative=stop).
+    event_name : str
+        Name for the NWB TimeIntervals table.
+
+    Returns
+    -------
+    intervals_df : pd.DataFrame
+        DataFrame with columns 'start_time', 'stop_time', and 'label' suitable for NWB TimeIntervals.
+        The 'label' column contains the absolute value of the start event.
+    """
+
+    print("Adding events to NWB file...")
+
+    if not {"time", "event"}.issubset(event_df.columns):
+        raise ValueError("DataFrame must have 'time' and 'event' columns.")
+
+    # Separate start and stop times
+    starts_df = event_df[event_df['event'] > 0].reset_index(drop=True)
+    stops_df = event_df[event_df['event'] < 0].reset_index(drop=True)
+
+    # Handle weird case: first stop before first start
+    if len(stops_df) > 0 and len(starts_df) > 0 and stops_df.loc[0, 'time'] < starts_df.loc[0, 'time']:
+        print(
+            f"Warning: first stop ({stops_df.loc[0, 'time']:.3f}) occurs before first start ({starts_df.loc[0, 'time']:.3f}). Discarding the first stop."
+        )
+        stops_df = stops_df.iloc[1:].reset_index(drop=True)
+
+    # Handle unbalanced starts/stops
+    n_intervals = min(len(starts_df), len(stops_df))
+    if len(starts_df) != len(stops_df):
+        print(
+            f"Warning: number of starts ({len(starts_df)}) != number of stops ({len(stops_df)}). Using first {n_intervals} intervals."
+        )
+    starts_df = starts_df.iloc[:n_intervals]
+    stops_df = stops_df.iloc[:n_intervals]
+
+    # Build a DataFrame for TimeIntervals with labels based on start event type
+    intervals_df = pd.DataFrame({
+        "start_time": starts_df['time'].values,
+        "stop_time": stops_df['time'].values,
+        "label": starts_df['event'].abs().values
+    })
+
+    # Create NWB TimeIntervals
+    events_table = TimeIntervals.from_dataframe(intervals_df, name=event_name)
+    nwbfile.add_time_intervals(events_table)
+
+    return nwbfile
+
+
+def add_events(nwbfile, events, event_name="events"):
+    print('Adding events to NWB file...')
+
+    # Handle case where events is a single IntervalSet
+    if isinstance(events, nap.IntervalSet):
+        events = {event_name: events}
+
+    # Ensure events is a dictionary
+    if not isinstance(events, dict):
+        raise TypeError(
+            "events must be a dictionary where keys are labels and values are pynapple IntervalSet instances."
+        )
+
+    # Ensure all values in events are IntervalSet instances
+    if not all(isinstance(interval_set, nap.IntervalSet) for interval_set in events.values()):
+        raise TypeError("All values in events must be pynapple IntervalSet instances.")
+
+    # Convert events into a pandas DataFrame
+    data = []
+    for label, interval_set in events.items():
+        df = pd.DataFrame({
+            "start_time": interval_set["start"],
+            "stop_time": interval_set["end"],
+            "label": [label] * len(interval_set)
+        })
+        data.append(df)
+
+    # Concatenate all event data
+    events_df = pd.concat(data, ignore_index=True)
+
+    # Create TimeIntervals from the DataFrame, now with a name
+    events_table = TimeIntervals.from_dataframe(events_df, name=event_name)
+
+    # Add to NWB file
+    nwbfile.add_time_intervals(events_table)
+
+    return nwbfile
+
+
 def create_nwb_file(metadata, start_time):
     # get info from folder name
 
@@ -159,45 +320,6 @@ def save_nwb_file(nwbfile, file_path, file_name):
         io.write(nwbfile)
 
     print('Done!')
-
-
-def add_events(nwbfile, events, event_name="events"):
-    print('Adding events to NWB file...')
-
-    # Handle case where events is a single IntervalSet
-    if isinstance(events, nap.IntervalSet):
-        events = {event_name: events}
-
-    # Ensure events is a dictionary
-    if not isinstance(events, dict):
-        raise TypeError(
-            "events must be a dictionary where keys are labels and values are pynapple IntervalSet instances."
-        )
-
-    # Ensure all values in events are IntervalSet instances
-    if not all(isinstance(interval_set, nap.IntervalSet) for interval_set in events.values()):
-        raise TypeError("All values in events must be pynapple IntervalSet instances.")
-
-    # Convert events into a pandas DataFrame
-    data = []
-    for label, interval_set in events.items():
-        df = pd.DataFrame({
-            "start_time": interval_set["start"],
-            "stop_time": interval_set["end"],
-            "label": [label] * len(interval_set)
-        })
-        data.append(df)
-
-    # Concatenate all event data
-    events_df = pd.concat(data, ignore_index=True)
-
-    # Create TimeIntervals from the DataFrame, now with a name
-    events_table = TimeIntervals.from_dataframe(events_df, name=event_name)
-
-    # Add to NWB file
-    nwbfile.add_time_intervals(events_table)
-
-    return nwbfile
 
 
 def add_units(nwbfile, xml_data, spikes, waveforms, shank_id):
@@ -428,7 +550,7 @@ def add_epochs(nwbfile, epochs, metadata):
     return nwbfile
 
 
-def add_lfp(nwbfile, lfp_path, xml_data=None):
+def add_lfp_matlab(nwbfile, lfp_path, xml_data=None):
     print('Adding LFP to the NWB file...')
 
     all_table_region = nwbfile.create_electrode_table_region(

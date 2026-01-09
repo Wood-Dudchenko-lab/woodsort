@@ -8,7 +8,7 @@ import platform
 import subprocess
 import re
 import shutil
-
+import xml.etree.ElementTree as ET
 
 def make_lfp_from_dat(
     dat_file,
@@ -157,7 +157,7 @@ def merge_lfp_files(session_folder, output_name="continuous.lfp"):
 
     return
 
-def copy_xml_to_session(recfolder_path):
+def copy_xml_to_session(recfolder_path, lfp_sample_rate):
     """
     Find a continuous.xml file somewhere under recfolder_path and copy it
     to the top-level session folder.
@@ -199,13 +199,24 @@ def copy_xml_to_session(recfolder_path):
     # Copy (overwrite if exists)
     # ------------------------------------------------------------
     shutil.copy2(xml_path, dest_path)
+
+    # ------------------------------------------------------------
+    # Add sampling rate to the xml file
+    # ------------------------------------------------------------
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    lfp_node = root.find("./fieldPotentials/lfpSamplingRate")
+    lfp_node.text = str(lfp_sample_rate)
+    tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+
+
     print(f"Copied XML file.")
 
     return
 
 def extract_lfp_openephys(
     session_folder,
-    output_sample_rate=1250,
+    lfp_sample_rate=1250,
     lopass=450,
     chunk_size=100_000,
 ):
@@ -269,7 +280,7 @@ def extract_lfp_openephys(
             lfp_name=lfp_name,
             input_sample_rate=input_sample_rate,
             num_channels=num_channels,
-            output_sample_rate=output_sample_rate,
+            output_sample_rate=lfp_sample_rate,
             lopass=lopass,
             chunk_size=chunk_size,
         )
@@ -278,7 +289,7 @@ def extract_lfp_openephys(
     # merge and delete LFP files
     merge_lfp_files(session_folder)
     # copy XML file if present
-    copy_xml_to_session(session_folder)
+    copy_xml_to_session(session_folder, lfp_sample_rate)
 
     print(f"LFP extraction done.\n")
 
