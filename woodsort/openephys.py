@@ -4,13 +4,14 @@ from pathlib import Path
 import spikeinterface.full as si
 import woodsort.neuroscope as neuroscope
 import numpy as np
-from probeinterface import ProbeGroup
+from probeinterface import write_probeinterface
 
-def process_openephys_with_neuroscope(
+def process_with_neuroscope(
     recording,
-    probe,
+    probe_or_probegroup,
     session_path,
     shank_groups,
+    save_path=None,
     plot_probe=False,
     plot_range=None,
     save_mapping=True,
@@ -32,17 +33,16 @@ def process_openephys_with_neuroscope(
     ----------
     recording : spikeinterface.core.BaseRecording
         The raw OpenEphys recording (or any SpikeInterface-compatible recording).
-    probe : probeinterface.Probe or probeinterface.ProbeGroup
-        Probe definition to attach to the recording. If a `ProbeGroup` is provided,
-        the first probe (`probe.probes[0]`) is used.
+    probe_or_probegroup : probeinterface.Probe or probeinterface.ProbeGroup
+        Probe definition to attach to the recording.
     session_path : pathlib.Path or str
-        Path to the session directory containing the Neuroscope files used by
-        `neuroscope.load_neuroscope_channels(...)`. Also used as the output
-        directory when `save_mapping=True`.
+        Path to the folder containing the openephys session directory
     shank_groups : list[int]
         Channel group IDs (as defined by the Neuroscope mapping) to include.
         Only rows whose `channel_group` is in this list are used to build the
         probe-to-recording mapping.
+    save_path : Path, default None
+        Path to the folder where files should be saved
     plot_probe : bool, default False
         If True, plot probe maps with device indices and with channel IDs.
     plot_range : tuple[float, float] or list[float, float] or None, default None
@@ -87,11 +87,12 @@ def process_openephys_with_neuroscope(
       probe, but *before* concatenation/splitting.
     """
 
-
-    # Validate if probe is a probe not ProbeGroup
-    if isinstance(probe, ProbeGroup):
-        print('Probe is a ProbeGroup! Using the first probe')
-        probe = probe.probes[0]
+    session_path = Path(session_path)
+    if save_path is None:
+        save_path = session_path
+    else:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
 
     # Validate plot_range
     if plot_range is not None:
@@ -117,21 +118,22 @@ def process_openephys_with_neuroscope(
         ].tolist()
     )
 
+
     # Get probe specs to re-add later (SpikeIntrface bug)
-    manufacturer = probe.manufacturer
-    model_name = probe.model_name
+    #manufacturer = probe.manufacturer
+    #model_name = probe.model_name
 
     # Add neuroscope mapping to probe
-    probe = neuroscope.add_neuroscope_mapping(
-        probe,
+    probe_or_probegroup = neuroscope.add_neuroscope_mapping(
+        probe_or_probegroup,
         neuroscope_channel_indices
     )
 
-    #print('Device channel indices and contact ids before adding to the recording')
-    #pprint(dict(zip(probe.device_channel_indices, probe.contact_ids)))
+    # Save probe to file
+    write_probeinterface(save_path / 'probegroup.json', probe_or_probegroup)
 
     # Attach probe
-    recording = recording.set_probe(probe, group_mode="by_shank")
+    recording = recording.set_probe(probe_or_probegroup, group_mode="by_shank")
 
     if plot_probe:
         si.plot_probe_map(recording, with_device_index=True)
@@ -196,20 +198,20 @@ def process_openephys_with_neuroscope(
 
     # save channel mapping
     if save_mapping:
-        out_path = session_path / "ChannelMapping.csv"
+        out_path = save_path / "ChannelMapping.csv"
         channel_mapping.to_csv(out_path, index=True)
         print(f'Channel mapping saved to {out_path} \n')
 
     return recording
 
-def get_events_openephys(recfolder_path, epochs='all', save_output=True, save_path=None,
-                         save_name="EventTimestamps.csv"):
+def get_events(rec_path, epochs='all', save_output=True, save_path=None,
+               save_name="EventTimestamps.csv"):
     """
     Extract TTL event timestamps from OpenEphys recordings across one or more epochs.
 
     Parameters
     ----------
-    recfolder_path : str or Path
+    rec_path : str or Path
         Path to the folder containing the OpenEphys recording
     epochs : 'all' or list of int, optional
         Epoch indices to extract events from. If 'all' (default), all epochs are used.
@@ -230,10 +232,15 @@ def get_events_openephys(recfolder_path, epochs='all', save_output=True, save_pa
 
     """
 
-    recfolder_path = Path(recfolder_path)
+    rec_path = Path(rec_path)
+    if save_path is None:
+        save_path = rec_path
+    else:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
 
     # Get epoch timestamps
-    epoch_df = get_epochs_openephys(recfolder_path, verbose=False, save_output=False, as_samples=True)
+    epoch_df = get_epochs(rec_path, verbose=False, save_output=False, as_samples=True)
     epoch_starts = epoch_df['Start'].values
     epoch_ends = epoch_df['End'].values
 
@@ -255,7 +262,7 @@ def get_events_openephys(recfolder_path, epochs='all', save_output=True, save_pa
 
     # Locate the Record Node folder
     node_path = next(
-        (p for p in recfolder_path.rglob("Record Node*") if p.is_dir()),
+        (p for p in rec_path.rglob("Record Node*") if p.is_dir()),
         None
     )
     if node_path is None:
@@ -313,12 +320,16 @@ def get_events_openephys(recfolder_path, epochs='all', save_output=True, save_pa
 
         events_all = pd.concat([events_all, events], ignore_index=True)
 
+        if len(events_all) == 0:
+            print(f"\nNo event timestamps detected in: {rec_path}\n")
+            return
+
         if save_output:
             if save_path is not None:
                 save_path = Path(save_path)
                 save_path.mkdir(parents=True, exist_ok=True)
             else:
-                save_path = recfolder_path
+                save_path = rec_path
 
             if not str(save_name).lower().endswith(".csv"):
                 save_name += ".csv"
@@ -330,7 +341,7 @@ def get_events_openephys(recfolder_path, epochs='all', save_output=True, save_pa
     return events_all
 
 
-def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimestamps.csv', verbose=True, save_output=True, as_samples=False):
+def get_epochs(rec_path, save_path=None, save_name='EpochTimestamps.csv', verbose=True, save_output=True, as_samples=False):
 
     """
     Extract start and end timestamps for each recording epoch in an OpenEphys session.
@@ -340,7 +351,7 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
 
     Parameters
     ----------
-    recfolder_path : str or Path
+    rec_path : str or Path
         Path to the session folder containing 'Record Node*/recording*' folders.
 
     save_path : str or Path, optional
@@ -371,13 +382,13 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
 
     """
 
-    recfolder_path = Path(recfolder_path)
+    rec_path = Path(rec_path)
 
     # ------------------------------------------------------------
     # Locate the Record Node folder
     # ------------------------------------------------------------
     node_path = next(
-        (p for p in recfolder_path.rglob("Record Node*") if p.is_dir()),
+        (p for p in rec_path.rglob("Record Node*") if p.is_dir()),
         None
     )
     if node_path is None:
@@ -470,7 +481,7 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
             save_path = Path(save_path)
             save_path.mkdir(parents=True, exist_ok=True)
         else:
-            save_path = recfolder_path
+            save_path = rec_path
 
         if not str(save_name).lower().endswith(".csv"):
             save_name += ".csv"
@@ -482,7 +493,7 @@ def get_epochs_openephys(recfolder_path, save_path=None, save_name='EpochTimesta
     return epoch_df
 
 
-def get_metadata_openephys(recfolder_path, save_path=None, save_name="MetadataOpenephys.txt"):
+def get_openephys_metadata(rec_path, save_path=None, save_name="MetadataOpenephys.txt"):
     """
     Extract and save Open Ephys sync metadata from a recording session.
 
@@ -497,7 +508,7 @@ def get_metadata_openephys(recfolder_path, save_path=None, save_name="MetadataOp
 
     Parameters
     ----------
-    recfolder_path : str or Path
+    rec_path : str or Path
         Path to the Open Ephys session directory containing
         'Record Node*' folders.
 
@@ -522,10 +533,10 @@ def get_metadata_openephys(recfolder_path, save_path=None, save_name="MetadataOp
     """
 
     print("\nCollecting sync messages...")
-    recfolder_path = Path(recfolder_path)
+    rec_path = Path(rec_path)
 
     node_path = next(
-        (p for p in recfolder_path.rglob("Record Node*") if p.is_dir()),
+        (p for p in rec_path.rglob("Record Node*") if p.is_dir()),
         None
     )
     if node_path is None:
@@ -552,13 +563,13 @@ def get_metadata_openephys(recfolder_path, save_path=None, save_name="MetadataOp
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
     else:
-        save_path = recfolder_path
+        save_path = rec_path
 
     with open(save_path / save_name, "w", encoding="utf-8") as f:
         for msg in messages:
             f.write(f"{msg}\n")
 
-    print(f"Sync metadata written to: {save_path / save_name}")
+    print(f"Sync metadata written to: {save_path / save_name}\n")
 
     return messages
 

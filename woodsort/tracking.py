@@ -206,6 +206,14 @@ def align_tracking_bonsai(
                                     bonsai_timestamps - bonsai_timestamps.iloc[0]
                             ).dt.total_seconds() + ttl_timestamps[0]
 
+        #calculate tracking duration based on Bonsai and TTL
+
+        ttl_duration_s = float(ttl_timestamps[-1] - ttl_timestamps[0]) if len(ttl_timestamps) > 1 else 0.0
+        bonsai_duration_s = float(bonsai_timestamps.iloc[-1] - bonsai_timestamps.iloc[0]) if len(bonsai_timestamps) > 1 else 0.0
+
+        print(f"Duration of tracking the epoch via Bonsai: {round(bonsai_duration_s,2)} seconds.")
+        print(f"Duration of tracking the epoch via TTL: {round(ttl_duration_s,2)} seconds.")
+
         # --------------------------------------------------------
         # Trim if TTL pulses > Bonsai frames
         # --------------------------------------------------------

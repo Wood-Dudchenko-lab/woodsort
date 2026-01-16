@@ -120,15 +120,21 @@ def make_lfp_from_dat(
             flfp.write(lfp_data.T.tobytes())
 
 
-def merge_lfp_files(session_folder, output_name="continuous.lfp"):
-    session_folder = Path(session_folder)
-    out_path = session_folder / output_name
+def merge_lfp_files(rec_path, save_path=None, save_name="continuous.lfp"):
+    
+    rec_path = Path(rec_path)
+    
+    if save_path is None: 
+        save_path = rec_path / save_name  
+    else:
+        save_path.mkdir(parents=True, exist_ok=True)
+        save_path = save_path / save_name
 
     # Collect component LFP files ONLY
-    files = list(session_folder.glob("continuous_*.lfp"))
-    files = [f for f in files if f.resolve() != out_path.resolve()]
+    files = list(rec_path.glob("continuous_*.lfp"))
+    files = [f for f in files if f.resolve() != save_path.resolve()]
     if not files:
-        raise FileNotFoundError(f"No continuous_*.lfp in {session_folder}")
+        raise FileNotFoundError(f"No continuous_*.lfp in {rec_path}")
 
     # Numeric sort by trailing index X
     def idx(p: Path):
@@ -142,37 +148,41 @@ def merge_lfp_files(session_folder, output_name="continuous.lfp"):
     # ---------- MERGE ----------
     if system.startswith("windows"):
         expr = " + ".join([f'"{str(f)}"' for f in files])
-        cmd = f'copy /B {expr} "{str(out_path)}"'
+        cmd = f'copy /B {expr} "{str(save_path)}"'
         subprocess.run(["cmd", "/c", cmd], check=True)
     else:
         quoted_in = " ".join([subprocess.list2cmdline([str(f)]) for f in files])
-        quoted_out = subprocess.list2cmdline([str(out_path)])
+        quoted_out = subprocess.list2cmdline([str(save_path)])
         cmd = f"cat {quoted_in} > {quoted_out}"
         subprocess.run(["/bin/sh", "-c", cmd], check=True)
 
-    print(f"Merged {len(files)} LFP files into {out_path}.")
+    print(f"Merged {len(files)} LFP files into {save_path}.")
     for f in files:
         f.unlink()
     print("Component LFP files removed.")
 
     return
 
-def copy_xml_to_session(recfolder_path, lfp_sample_rate):
+def copy_xml_to_session(rec_path, lfp_sample_rate, save_path=None):
     """
     Find a continuous.xml file somewhere under recfolder_path and copy it
     to the top-level session folder.
 
     The XML chosen is the one with the smallest recording number.
     """
-
-    recfolder_path = Path(recfolder_path)
+    rec_path = Path(rec_path)
+    if save_path is None: 
+        save_path = rec_path 
+    else:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------
     # Find XML files
     # ------------------------------------------------------------
-    xml_candidates = list(recfolder_path.rglob("continuous.xml"))
+    xml_candidates = list(rec_path.rglob("continuous.xml"))
     if not xml_candidates:
-        print(f"No XML file found in {recfolder_path}.")
+        print(f"No XML file found in {rec_path}.")
         return
 
     # ------------------------------------------------------------
@@ -193,7 +203,7 @@ def copy_xml_to_session(recfolder_path, lfp_sample_rate):
         recording_numbers.index(min(recording_numbers))
     ]
 
-    dest_path = recfolder_path / "continuous.xml"
+    dest_path = save_path / "continuous.xml"
 
     # ------------------------------------------------------------
     # Copy (overwrite if exists)
@@ -215,7 +225,8 @@ def copy_xml_to_session(recfolder_path, lfp_sample_rate):
     return
 
 def extract_lfp_openephys(
-    session_folder,
+    rec_path,
+    save_path=None,
     lfp_sample_rate=1250,
     lopass=450,
     chunk_size=100_000,
@@ -227,17 +238,21 @@ def extract_lfp_openephys(
       - process it into session_folder/local_field_potential_X.lfp
     """
 
-    session_folder = Path(session_folder)
-    session_folder.mkdir(parents=True, exist_ok=True)
+    rec_path = Path(rec_path)
+    if save_path is None:
+        save_path = rec_path
+    else:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
 
     # Find recording* directories anywhere under the session folder
     recording_folders = sorted(
-        [p for p in session_folder.rglob("recording*") if p.is_dir()],
+        [p for p in rec_path.rglob("recording*") if p.is_dir()],
         key=lambda p: (len(p.parts), p.name),
     )
 
     if not recording_folders:
-        print(f"No recording* folders found under {session_folder}")
+        print(f"No recording* folders found under {rec_path}")
         return
 
     idx = 0
@@ -270,13 +285,13 @@ def extract_lfp_openephys(
 
         idx += 1
         lfp_name = f"continuous_{idx:02d}"
-        out_lfp = session_folder / f"{lfp_name}.lfp"
+        out_lfp = rec_path / f"{lfp_name}.lfp"
 
         print(f"\n[{idx}] recording folder: {rec}")
 
         make_lfp_from_dat(
             dat_file=dat_file,
-            output_folder=session_folder,
+            output_folder=save_path,
             lfp_name=lfp_name,
             input_sample_rate=input_sample_rate,
             num_channels=num_channels,
@@ -287,9 +302,9 @@ def extract_lfp_openephys(
     print(f"\nDone. Processed {idx} recording folder(s).")
 
     # merge and delete LFP files
-    merge_lfp_files(session_folder)
+    merge_lfp_files(save_path)
     # copy XML file if present
-    copy_xml_to_session(session_folder, lfp_sample_rate)
+    copy_xml_to_session(rec_path, lfp_sample_rate, save_path=save_path)
 
     print(f"LFP extraction done.\n")
 

@@ -18,10 +18,10 @@ import json
 from pathlib import Path
 from neuroconv.tools.nwb_helpers import get_default_nwbfile_metadata
 import xml.etree.ElementTree as ET
+from probeinterface import ProbeGroup
 
 
-def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_mode='hard', n_jobs=12):
-
+def add_spikeinterface_openephys(nwbfile, analyzer, probe, curation_path=None, merging_mode='hard', n_jobs=12):
     # set number of parallel CPU cores to use for feature recalculation
     si.set_global_job_kwargs(n_jobs=n_jobs)
 
@@ -43,20 +43,32 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
     print(f"\nApplying curation from file {curation_path}")
     analyzer = si.apply_curation(analyzer, curation_dict, merging_mode=merging_mode)
 
-    # neuroConv uses hard-coded channel_names from recording (bug), let's replace them with the updated values from analyzer
-    channel_names = analyzer.get_recording_property('channel_name')  # channel_names updated earlier
+    # channel_names used by NeuroConv don't propagate from spike sorting, let's replace them with channel_ids
+    channel_names = analyzer.recording.channel_ids  # channel_names updated earlier
     analyzer.recording.set_property('channel_name', channel_names)  # change hard-coded names
 
     # convert probe info to the NeuroConv format
-    metadata_neuroconv = get_default_nwbfile_metadata()
+    # TODO: Add handling of multiple probes
+    if type(probe) == ProbeGroup:
+        probe = probe.probes[0]
+
+    metadata_probes = {
+        "Ecephys": {
+            "Device": [
+                {
+                    "name": "Probe",
+                    "description": probe.model_name,
+                    "manufacturer": probe.manufacturer,
+                }
+            ]
+        }
+    }
 
     # add spike sorting to the nwb file
     add_sorting_to_nwbfile(analyzer.sorting, nwbfile)
 
-    # add recording metadata to nwb file
-    add_recording_metadata_to_nwbfile(analyzer.recording, nwbfile)  # probe, electrodes, electrode groups
-    electrodes_table = nwbfile.electrodes.to_dataframe()  # electrode_name is anatomical index (top-bottom shank-wise)
-    #print(electrodes_table)
+    # add recording metadata to nwb file (probe, electrodes, electrode groups)
+    add_recording_metadata_to_nwbfile(analyzer.recording, nwbfile, metadata_probes)
 
     # Now add extra info for each unit
     quality_metrics = analyzer.get_extension('quality_metrics').get_data()  # quality metrics
@@ -91,13 +103,13 @@ def add_spikeinterface_openephys(nwbfile, analyzer, curation_path=None, merging_
             description=f"{column_name}, computed using spikeinterface.",
         )
 
-    # Finally WAVEFORMS
+    # waveforms
     waveforms = analyzer.get_extension("templates").get_data()
     # Code to sort waveforms according to spatial sequence
-    #mapping = dict(zip(sorting_analyzer.get_probe().device_channel_indices, sorting_analyzer.get_probe().contact_ids))
-    #order = sorted(mapping, key=lambda k: int(mapping[k]))
-    #print(waveforms.shape)
-    #waveforms = waveforms[:, :, order]  # sort according to probe mapping
+    # mapping = dict(zip(sorting_analyzer.get_probe().device_channel_indices, sorting_analyzer.get_probe().contact_ids))
+    # order = sorted(mapping, key=lambda k: int(mapping[k]))
+    # print(waveforms.shape)
+    # waveforms = waveforms[:, :, order]  # sort according to probe mapping
 
     nwbfile.units.add_column(
         name="waveform_mean",

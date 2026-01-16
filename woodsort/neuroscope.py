@@ -1,11 +1,10 @@
 
-#from __future__ import annotations
 import re
 import numpy as np
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import pandas as pd
-
+from probeinterface import ProbeGroup
 
 def load_neuroscope_channels(recfolder_path):
     """
@@ -83,6 +82,9 @@ def add_neuroscope_mapping(probe, xml_channel_indices):
         print("Number of Neuroscope channels doesn't match the SpikeInterface probe!")  # Sanity check for xml channel indices
         print("Check Neuroscope mapping")  # Sanity check for xml channel indices
 
+    #TODO: Add handling of probegroup (multiple probes)
+    if type(probe) == ProbeGroup:
+        probe = probe.probes[0]
 
     # Sort contact positions based on shank IDs and y-coordinates
     shank_ids = probe.shank_ids
@@ -110,9 +112,6 @@ def add_neuroscope_mapping(probe, xml_channel_indices):
 
     # Set device channel indices
     probe.set_device_channel_indices(xml_channel_indices)
-
-    # Add annotation about corresponding DAT file acquisition channels
-    probe.annotate_contacts(acquisition_channel=xml_channel_indices)
 
     print("Probe updated with Neuroscope mapping")
 
