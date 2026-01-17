@@ -21,7 +21,14 @@ import xml.etree.ElementTree as ET
 from probeinterface import ProbeGroup
 
 
-def add_spikeinterface_openephys(nwbfile, analyzer, probe, curation_path=None, merging_mode='hard', n_jobs=12):
+def add_spikeinterface_openephys(nwbfile,
+                                 analyzer,
+                                 probe,
+                                 curation_path=None,
+                                 metadata=None,
+                                 merging_mode='hard',
+                                 n_jobs=12):
+
     # set number of parallel CPU cores to use for feature recalculation
     si.set_global_job_kwargs(n_jobs=n_jobs)
 
@@ -67,6 +74,8 @@ def add_spikeinterface_openephys(nwbfile, analyzer, probe, curation_path=None, m
     # add spike sorting to the nwb file
     add_sorting_to_nwbfile(analyzer.sorting, nwbfile)
 
+
+
     # add recording metadata to nwb file (probe, electrodes, electrode groups)
     add_recording_metadata_to_nwbfile(analyzer.recording, nwbfile, metadata_probes)
 
@@ -103,13 +112,35 @@ def add_spikeinterface_openephys(nwbfile, analyzer, probe, curation_path=None, m
             description=f"{column_name}, computed using spikeinterface.",
         )
 
+    # add recording location to each unit and electrode
+    # --- add 'brain_area' derived from 'aggregation_key' using metadata['shank'] mapping (optional) ---
+    if (metadata is not None) and ("shank" in metadata):
+
+        # Convert aggregation_key to numeric (NaNs remain NaN), then stringify to match metadata keys
+        units = nwbfile.units.to_dataframe()
+        agg_units = pd.to_numeric(units["aggregation_key"], errors="coerce").dropna().astype(int).astype(str)
+        location_units = pd.Series(np.nan, index=units.index, dtype="object")
+        location_units.loc[agg_units.index] = agg_units.map(metadata["shank"])
+
+        nwbfile.units.add_column(
+            name="brain_area",
+            data=location_units.to_numpy(),
+            description="Brain area for each unit, mapped from aggregation_key via metadata['shank'].",
+        )
+
+        electrodes = nwbfile.electrodes.to_dataframe()
+        agg_elec = pd.to_numeric(electrodes["aggregation_key"], errors="coerce").dropna().astype(int).astype(str)
+        location_elec = pd.Series(np.nan, index=electrodes.index, dtype="object")
+        location_elec.loc[agg_elec.index] = agg_elec.map(metadata["shank"])
+
+        nwbfile.electrodes.add_column(
+            name="brain_area",
+            data=location_elec.to_numpy(),
+            description="Brain area for each electrode, mapped from aggregation_key via metadata['shank']."
+        )
+
     # waveforms
     waveforms = analyzer.get_extension("templates").get_data()
-    # Code to sort waveforms according to spatial sequence
-    # mapping = dict(zip(sorting_analyzer.get_probe().device_channel_indices, sorting_analyzer.get_probe().contact_ids))
-    # order = sorted(mapping, key=lambda k: int(mapping[k]))
-    # print(waveforms.shape)
-    # waveforms = waveforms[:, :, order]  # sort according to probe mapping
 
     nwbfile.units.add_column(
         name="waveform_mean",

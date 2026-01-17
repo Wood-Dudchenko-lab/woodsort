@@ -507,6 +507,9 @@ def read_metadata_excel(
     # Load the Excel file
     df = pd.read_excel(file_path)
 
+    # make all column names lowercase(and strip whitespace for safety)
+    df.columns = df.columns.str.strip().str.lower()
+
     # Filter the row where 'file_name' matches exactly
     df = df[df["file_name"] == file_name]
 
