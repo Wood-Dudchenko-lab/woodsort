@@ -48,7 +48,7 @@ def add_spikeinterface_openephys(nwbfile, analyzer, probe, curation_path=None, m
     analyzer.recording.set_property('channel_name', channel_names)  # change hard-coded names
 
     # convert probe info to the NeuroConv format
-    # TODO: Add handling of multiple probes
+    # TO DO: Add handling of multiple probes
     if type(probe) == ProbeGroup:
         probe = probe.probes[0]
 
