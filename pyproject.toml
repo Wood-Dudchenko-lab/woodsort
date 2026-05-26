@@ -1,6 +1,6 @@
 [project]
 name = "woodsort"
-version = "0.1.1"
+version = "0.1.2"
 description = "Spike sorting pipeline in Wood/Dudchenko lab"
 authors = [
     { name = "Adrian Duszkiewicz", email = "a.j.duszkiewicz@gmail.com" },

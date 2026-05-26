@@ -1,10 +1,37 @@
 import json
+import re
 import pandas as pd
 from pathlib import Path
 import spikeinterface.full as si
 import woodsort.neuroscope as neuroscope
 import numpy as np
 from probeinterface import write_probeinterface
+
+
+_AMPLIFIER_CHANNEL_RE = re.compile(r"^CH(\d+)$", re.IGNORECASE)
+_NON_NEURAL_CHANNEL_TOKENS = ("AUX", "ADC", "ANALOG", "DIN", "DO", "TTL", "SYNC", "EVENT")
+
+
+def _is_non_neural_channel_id(channel_id):
+    channel_id = str(channel_id).strip().upper()
+    return any(token in channel_id for token in _NON_NEURAL_CHANNEL_TOKENS)
+
+
+def _channel_id_to_neuroscope_index(channel_id):
+    if isinstance(channel_id, (int, np.integer)):
+        return int(channel_id)
+
+    channel_id_str = str(channel_id).strip()
+    match = _AMPLIFIER_CHANNEL_RE.fullmatch(channel_id_str)
+    if match is None:
+        raise ValueError(
+            "Expected Open Ephys amplifier channel IDs like 'CH1', 'CH2', ... "
+            f"but found {channel_id!r}. Non-neural AUX/ADC/TTL channels should "
+            "be removed before assigning a probe."
+        )
+
+    return int(match.group(1)) - 1
+
 
 def process_with_neuroscope(
     recording,
@@ -28,6 +55,8 @@ def process_with_neuroscope(
     concatenates/splits the recording by shank groups, applies a high-pass/bandpass
     filter, optionally detects and removes bad channels, and optionally saves a
     `ChannelMapping.csv` that includes a boolean `is_bad` column.
+    Non-neural Open Ephys channels such as AUX/ADC/TTL/event channels are removed
+    before probe mapping because they do not correspond to Neuroscope probe contacts.
 
     Parameters
     ----------
@@ -102,9 +131,24 @@ def process_with_neuroscope(
                 "(t_start, t_end)"
             )
 
-    # Change channel ids in the recording to match Neuroscope (0-base sequential integers)
+    # Drop non-neural Open Ephys streams before attaching the probe. These channels
+    # do not have probe contacts or Neuroscope anatomical-group entries.
     channel_ids = recording.get_channel_ids()
-    new_channel_ids = [int(ch[2:]) - 1 for ch in channel_ids]
+    non_neural_channel_ids = [
+        ch for ch in channel_ids if _is_non_neural_channel_id(ch)
+    ]
+    if non_neural_channel_ids:
+        recording = recording.remove_channels(non_neural_channel_ids)
+        print(
+            "Removed non-neural Open Ephys channels before probe mapping: "
+            f"{non_neural_channel_ids}"
+        )
+        channel_ids = recording.get_channel_ids()
+
+    # Change channel ids in the recording to match Neuroscope (0-base sequential integers)
+    new_channel_ids = [
+        _channel_id_to_neuroscope_index(ch) for ch in channel_ids
+    ]
     recording = recording.rename_channels(new_channel_ids)
 
     # Load Neuroscope channel mapping
@@ -572,8 +616,6 @@ def get_openephys_metadata(rec_path, save_path=None, save_name="MetadataOpenephy
     print(f"Sync metadata written to: {save_path / save_name}\n")
 
     return messages
-
-
 
 
 

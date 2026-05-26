@@ -79,35 +79,62 @@ def add_neuroscope_mapping(probe, xml_channel_indices):
 
     # Sanity check for number of channels
     if probe.get_contact_count() != len(xml_channel_indices):
-        print("Number of Neuroscope channels doesn't match the SpikeInterface probe!")  # Sanity check for xml channel indices
-        print("Check Neuroscope mapping")  # Sanity check for xml channel indices
+        raise ValueError(
+            "Number of Neuroscope channels doesn't match the SpikeInterface "
+            f"probe: probe has {probe.get_contact_count()} contacts but "
+            f"Neuroscope mapping has {len(xml_channel_indices)} channels. "
+            "Check shank_groups and the probe layout."
+        )
 
     #TODO: Add handling of probegroup (multiple probes)
-    if type(probe) == ProbeGroup:
+    if isinstance(probe, ProbeGroup):
         probe = probe.probes[0]
 
     # Sort contact positions based on shank IDs and y-coordinates
+    contact_count = probe.get_contact_count()
     shank_ids = probe.shank_ids
-    contact_positions = probe.contact_positions
+    if shank_ids is None:
+        shank_ids = np.zeros(contact_count, dtype=int)
+    else:
+        shank_ids = np.asarray(shank_ids)
+        if shank_ids.ndim == 0 or shank_ids.size == 1:
+            shank_ids = np.repeat(shank_ids.item(), contact_count)
+        elif shank_ids.size != contact_count:
+            raise ValueError(
+                "Probe shank_ids must contain one value per contact: "
+                f"got {shank_ids.size} shank IDs for {contact_count} contacts."
+            )
+
+    contact_positions = np.asarray(probe.contact_positions)
     unique_shank_ids = np.unique(shank_ids)
 
     # sort channels based on their coordinates, top to bottom and shank-wise
-    sorted_coordinates_by_shank = []
+    sorted_indices_by_shank = []
     for unique_id in unique_shank_ids:
         id_indices = np.where(shank_ids == unique_id)[0]
         coors = contact_positions[id_indices]
-        coors = coors[coors[:, 1].argsort()[::-1]]
-        sorted_coordinates_by_shank.append(coors)
-    final_sorted_coordinates = np.vstack(sorted_coordinates_by_shank)
+        sorted_indices_by_shank.append(id_indices[coors[:, 1].argsort()[::-1]])
+    sorted_indices = np.concatenate(sorted_indices_by_shank)
+    final_sorted_coordinates = contact_positions[sorted_indices]
+
+    def _reorder_contact_property(values):
+        if values is None:
+            return None
+        values = np.asarray(values, dtype=object)
+        if values.ndim == 0:
+            return np.repeat(values.item(), contact_count)
+        if len(values) != contact_count:
+            return values
+        return values[sorted_indices]
 
     # Update probe with sorted coordinates
     probe.set_contacts(
         final_sorted_coordinates,
-        shapes=probe.contact_shapes,
-        shape_params=probe.contact_shape_params,
-        plane_axes=probe.contact_plane_axes,
+        shapes=_reorder_contact_property(probe.contact_shapes),
+        shape_params=_reorder_contact_property(probe.contact_shape_params),
+        plane_axes=_reorder_contact_property(probe.contact_plane_axes),
         contact_ids=np.arange(len(xml_channel_indices)),
-        shank_ids=np.sort(probe.shank_ids),  # Sorted shank_ids
+        shank_ids=shank_ids[sorted_indices],
     )
 
     # Set device channel indices
@@ -116,5 +143,4 @@ def add_neuroscope_mapping(probe, xml_channel_indices):
     print("Probe updated with Neuroscope mapping")
 
     return probe
-
 
