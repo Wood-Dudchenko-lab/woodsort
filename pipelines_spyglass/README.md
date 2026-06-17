@@ -1,25 +1,10 @@
-# Spike sorting pipelines
+# Spyglass spike-sorting & curation pipeline
 
-This folder holds two **different families** of spike-sorting notebooks. They do not share a
-database or an environment, so pick the one that matches what you want to do.
-
-### 1. Standalone SpikeInterface pipelines
-
-`Pipeline_H7100.ipynb`, `Pipeline_H7400.ipynb`, `Pipeline_H8000.ipynb`,
-`Pipeline_GonzalezSulserLab.ipynb`, `Pipeline_GonzalezSulserLab_H9.ipynb`
-
-These run [SpikeInterface](https://spikeinterface.readthedocs.io/) directly on raw Open Ephys
-folders. They never touch Spyglass — sorting, curation (in the SpikeInterface GUI), and export all
-happen in one notebook, in one environment. Start here if you just want to sort a session.
-
-### 2. The Spyglass pipeline (this README's focus)
-
-`Pipeline_Spyglass_*.ipynb`
-
-These run the sorting **inside Spyglass**, so every stage is stored and tracked as a DataJoint
-table (full provenance, reproducible parameters, downstream-ready outputs). Curation is split
-across several notebooks because the SpikeInterface GUI cannot run in the Spyglass environment
-(see [Why two environments?](#why-two-environments) below).
+This directory holds the **Spyglass** spike-sorting pipeline: the sorting runs **inside Spyglass**,
+so every stage is stored and tracked as a DataJoint table (full provenance, reproducible
+parameters, downstream-ready outputs). Curation is split across several notebooks because the
+SpikeInterface GUI cannot run in the Spyglass environment (see
+[Why two environments?](#why-two-environments) below).
 
 ---
 
@@ -31,7 +16,7 @@ Run the four notebooks in order. Each one's first cells re-derive everything fro
 | # | Notebook | Kernel | Produces |
 |---|----------|--------|----------|
 | 1 | `Pipeline_Spyglass_SpikeSorting.ipynb` | `spyglass` | Sort → `CurationV1` **`curation_id = 0`** (raw), inserted into `SpikeSortingOutput` |
-| 2 | `Pipeline_Spyglass_Curation.ipynb` | `spyglass` | **Automatic** curation → `curation_id = 1`; **exports** recording + sorting for manual curation |
+| 2 | `Pipeline_Spyglass_AutomaticCuration.ipynb` | `spyglass` | **Automatic** curation → `curation_id = 1`; **exports** recording + sorting for manual curation |
 | 3 | `Pipeline_Spyglass_ManualCuration.ipynb` | `spikeinterface_gui_env` | **Manual** curation in the SpikeInterface GUI → `curation_data.json` |
 | 4 | `Pipeline_Spyglass_CompareCurations.ipynb` | `spyglass` | Re-ingests the GUI result → `curation_id = 2`; compares rounds 0/1/2; exposes the chosen one downstream |
 
@@ -41,7 +26,7 @@ Run the four notebooks in order. Each one's first cells re-derive everything fro
   │ 1. Pipeline_Spyglass_SpikeSorting                        │          │ 3. Pipeline_Spyglass_         │
   │      sort  ──►  CurationV1 curation_id=0 (raw)           │          │    ManualCuration            │
   │                                                          │          │                              │
-  │ 2. Pipeline_Spyglass_Curation                            │          │   load exported recording +  │
+  │ 2. Pipeline_Spyglass_AutomaticCuration                   │          │   load exported recording +  │
   │      MetricCuration ──► curation_id=1 (automatic)        │          │   sorting ──► SortingAnalyzer │
   │      export recording + sorting  ───────────────────────┼─────────►│   ──► SpikeInterface GUI      │
   │                                                          │  export  │   ──► curation_data.json      │
@@ -80,12 +65,3 @@ location is `manual_curation_export/<sorting_id>/` (see the diagram).
 > version mismatch): read the Spyglass recording/sorting directly from their NWB files instead,
 > using `spikeinterface.extractors.NwbRecordingExtractor` / `NwbSortingExtractor`, then build the
 > analyzer from those.
-
-## Notes
-
-- **Automatic-curation thresholds** in step 2 (`label_params`) must label at least one unit, or
-  `MetricCuration.populate` crashes on an all-empty label column. The notebook prints the labeled
-  count and tells you to retune if it is zero. See the markdown in that notebook for details.
-- **Curation labels** differ between the two worlds. The GUI uses `good` / `noise` / `MUA`;
-  Spyglass uses `reject` / `noise` / `artifact` / `mua` / `accept`. Step 4 maps between them
-  (`good → accept`, `MUA → mua`, removed units → `reject`).
