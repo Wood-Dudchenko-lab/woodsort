@@ -22,19 +22,19 @@ Run the four notebooks in order. Each one's first cells re-derive everything fro
 
 ```
                           [spyglass env]                                  [spikeinterface_gui_env]
-  ┌─────────────────────────────────────────────────────────┐          ┌──────────────────────────────┐
-  │ 1. Pipeline_Spyglass_SpikeSorting                        │          │ 3. Pipeline_Spyglass_         │
-  │      sort  ──►  CurationV1 curation_id=0 (raw)           │          │    ManualCuration            │
-  │                                                          │          │                              │
-  │ 2. Pipeline_Spyglass_AutomaticCuration                   │          │   load exported recording +  │
-  │      MetricCuration ──► curation_id=1 (automatic)        │          │   sorting ──► SortingAnalyzer │
-  │      export recording + sorting  ───────────────────────┼─────────►│   ──► SpikeInterface GUI      │
-  │                                                          │  export  │   ──► curation_data.json      │
-  │ 4. Pipeline_Spyglass_CompareCurations                    │◄─────────┼───────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────┐         ┌──────────────────────────────┐
+  │ 1. Pipeline_Spyglass_SpikeSorting                        │         │ 3. Pipeline_Spyglass_        │
+  │      sort  ──►  CurationV1 curation_id=0 (raw)           │         │    ManualCuration            │
+  │                                                          │         │                              │
+  │ 2. Pipeline_Spyglass_AutomaticCuration                   │         │   load exported recording +  │
+  │      MetricCuration ──► curation_id=1 (automatic)        │         │   sorting ──► SortingAnalyzer│
+  │      export recording + sorting  ────────────────────────│───────► │   ──► SpikeInterface GUI     │
+  │                                                          │  export │   ──► curation_data.json     │
+  │ 4. Pipeline_Spyglass_CompareCurations                    │◄────────┘──────────────────────────────┘
   │      ingest curation_data.json ──► curation_id=2 (manual)│  json
   │      compare rounds 0 / 1 / 2                            │
   │      expose chosen curation ──► SpikeSortingOutput       │
-  └─────────────────────────────────────────────────────────┘
+  └──────────────────────────────────────────────────────────┘
 
   Handoff folder (shared by steps 2 → 3 → 4):
       manual_curation_export/<sorting_id>/
@@ -44,10 +44,7 @@ Run the four notebooks in order. Each one's first cells re-derive everything fro
               spikeinterface_gui/curation_data.json   (written by the GUI in step 3)
 ```
 
-If you only care about **automatic** curation, you can stop after step 2 and choose `curation_id =
-1` as your downstream result. Steps 3 and 4 are only needed for **manual** curation.
-
-## Why two environments?
+## Why two environments? (current v1 chain)
 
 The SpikeInterface GUI needs a `SortingAnalyzer`, which only exists in SpikeInterface 0.101+.
 
@@ -61,7 +58,26 @@ on-disk folders (binary recording + npz sorting), step 3 loads them in the GUI e
 writes `curation_data.json`, and step 4 reads that file back into Spyglass. The shared handoff
 location is `manual_curation_export/<sorting_id>/` (see the diagram).
 
-> **Fallback if the exported folders fail to load in step 3** (a SpikeInterface 0.99 → 0.104
-> version mismatch): read the Spyglass recording/sorting directly from their NWB files instead,
-> using `spikeinterface.extractors.NwbRecordingExtractor` / `NwbSortingExtractor`, then build the
-> analyzer from those.
+
+## Preview: the same workflow in **one** environment (`Pipeline_Spyglass_FutureWorkflow.ipynb`)
+
+`Pipeline_Spyglass_FutureWorkflow.ipynb` collapses the entire four-notebook / two-environment chain
+into **one notebook in the `spyglass` environment**. It is a preview of the workflow that becomes
+possible once Spyglass [PR #1609](https://github.com/LorenFrankLab/spyglass/pull/1609) merges: that
+PR bumps Spyglass to **SpikeInterface 0.104** and adds the new `spyglass.spikesorting.v2` pipeline,
+so the `SortingAnalyzer` and the SpikeInterface GUI run in the **same** environment as the database
+— no export/import, no kernel switch.
+
+To run it today, check out the `spikesorting-v2` branch and install the GUI into the `spyglass`
+environment:
+
+```bash
+pip install "spikeinterface-gui[full]"   # compatible with SpikeInterface 0.104
+```
+
+The notebook uses `run_v2_pipeline` (recording → artifact → sort → curation), `Sorting.get_analyzer`
+to build the analyzer in-process, `run_mainwindow(analyzer, curation=True)` for manual curation, and
+`CurationV2.insert_curation` to re-ingest the GUI result (auto-registering it on
+`SpikeSortingOutput`). Its closing section lists the remaining gaps to flag upstream (no built-in
+GUI/curation-ingest helper, `get_analyzer`'s minimal extension set, `spikeinterface-gui` not yet a
+declared dependency, and no v2 `MetricCuration` table).
