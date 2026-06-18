@@ -72,12 +72,10 @@ To run it today, check out the `spikesorting-v2` branch and install the GUI into
 environment:
 
 ```bash
-pip install "spikeinterface-gui[full]"   # compatible with SpikeInterface 0.104
+pip install "spikeinterface-gui[desktop]"   # compatible with SpikeInterface 0.104
 ```
 
 The notebook uses `run_v2_pipeline` (recording → artifact → sort → curation), `Sorting.get_analyzer`
 to build the analyzer in-process, `run_mainwindow(analyzer, curation=True)` for manual curation, and
 `CurationV2.insert_curation` to re-ingest the GUI result (auto-registering it on
-`SpikeSortingOutput`). Its closing section lists the remaining gaps to flag upstream (no built-in
-GUI/curation-ingest helper, `get_analyzer`'s minimal extension set, `spikeinterface-gui` not yet a
-declared dependency, and no v2 `MetricCuration` table).
+`SpikeSortingOutput`).
